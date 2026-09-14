@@ -1,0 +1,50 @@
+[project]
+name = "comfyui-h3-planner"
+description = "Plan, render and stitch long MiniMax H3 videos in ComfyUI. A Story Planner writes a whole advert or short film from one brief, a Beat Map cuts a music video on the bar lines, and every segment renders one per queue run into a vault that stitches back to the exact planned durations. Sampling stays in your own graph."
+version = "0.1.0"
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "AI Jigyasa" },
+]
+keywords = ["comfyui", "minimax-h3", "video-generation", "storyboard",
+            "music-video", "timeline", "long-video"]
+
+# Nothing to install. numpy, Pillow and torch already ship with ComfyUI, and
+# ffmpeg is called as an external binary rather than through a Python wrapper.
+#
+# librosa is deliberately NOT here and there is deliberately no
+# requirements.txt: ComfyUI Manager installs that file on every install, and
+# librosa is only used by the Beat Map. It lives in requirements-audio.txt as
+# an opt-in, and the Beat Map says so when it is missing.
+dependencies = []
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+
+[project.urls]
+Homepage = "https://github.com/AIJigyasa/ComfyUI-H3-Planner"
+Repository = "https://github.com/AIJigyasa/ComfyUI-H3-Planner"
+# `Issues`, not `BugTracker`: ComfyUI's own config parser reads this key
+# and silently drops the other.
+Issues = "https://github.com/AIJigyasa/ComfyUI-H3-Planner/issues"
+
+[tool.comfy]
+# Registry profile @aijigyasa. Never put the publisher API key in this file:
+# it belongs in the GitHub secret REGISTRY_ACCESS_TOKEN, or passed to
+# `comfy node publish --token`. Everything in this repo gets published.
+PublisherId = "aijigyasa"
+DisplayName = "MiniMax H3 Planner"
+# The registry fetches this URL at publish time, so icon.png must already be
+# pushed to the default branch before the first publish.
+Icon = "https://raw.githubusercontent.com/AIJigyasa/ComfyUI-H3-Planner/main/icon.png"

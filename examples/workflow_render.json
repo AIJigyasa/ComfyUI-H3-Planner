@@ -1,0 +1,808 @@
+{
+  "119": {
+    "inputs": {
+      "vae_name": "H3\\minimax_h3_video_vae_fp16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "120": {
+    "inputs": {
+      "vae_name": "H3\\minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "121": {
+    "inputs": {
+      "samples": [
+        "201",
+        0
+      ],
+      "vae": [
+        "120",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeAudio",
+    "_meta": {
+      "title": "VAE Decode Audio"
+    }
+  },
+  "122": {
+    "inputs": {
+      "samples": [
+        "209",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "123": {
+    "inputs": {
+      "sampler_name": "er_sde"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "124": {
+    "inputs": {
+      "scheduler": "beta",
+      "steps": 4,
+      "denoise": 1,
+      "model": [
+        "192",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "BasicScheduler"
+    }
+  },
+  "126": {
+    "inputs": {
+      "model": [
+        "192",
+        0
+      ],
+      "conditioning": [
+        "136",
+        0
+      ]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {
+      "title": "Basic Guider"
+    }
+  },
+  "128": {
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "129": {
+    "inputs": {
+      "noise_seed": [
+        "303",
+        6
+      ]
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "136": {
+    "inputs": {
+      "prompt": [
+        "138",
+        0
+      ],
+      "width": [
+        "303",
+        3
+      ],
+      "height": [
+        "303",
+        4
+      ],
+      "length": [
+        "303",
+        2
+      ],
+      "ref_image_size": "match",
+      "clip": [
+        "128",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ],
+      "audio_vae": [
+        "120",
+        0
+      ],
+      "ref_images.ref_image_0": [
+        "143",
+        0
+      ],
+      "ref_audios.ref_audio_0": [
+        "304",
+        0
+      ],
+      "ref_images.ref_image_1": [
+        "312",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "_meta": {
+      "title": "MiniMax H3 Reference to Video"
+    }
+  },
+  "138": {
+    "inputs": {
+      "value": [
+        "303",
+        1
+      ]
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Input Text (Prompt)"
+    }
+  },
+  "143": {
+    "inputs": {
+      "width": [
+        "303",
+        3
+      ],
+      "height": [
+        "303",
+        4
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "resize",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "301",
+        1
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "144": {
+    "inputs": {
+      "max_resolution": 1024,
+      "jpeg_quality": 80,
+      "suppress_default_preview": false,
+      "preview_frames": 240,
+      "preview_fps": 24,
+      "tiny_vae": "taeh3.safetensors",
+      "model": [
+        "169",
+        0
+      ]
+    },
+    "class_type": "ModelPreviewOverrideKJ",
+    "_meta": {
+      "title": "Model Preview Override"
+    }
+  },
+  "158": {
+    "inputs": {
+      "fps": 24,
+      "bit_depth": 8,
+      "color_space": "sRGB",
+      "images": [
+        "122",
+        0
+      ],
+      "audio": [
+        "121",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "169": {
+    "inputs": {
+      "model_name": "minimax_h3_fastvideo_vsa_datafree_1300step_4step_int8_convrot.safetensors",
+      "weight_dtype": "default",
+      "compute_dtype": "default",
+      "patch_cublaslinear": true,
+      "sage_attention": "auto",
+      "enable_fp16_accumulation": true
+    },
+    "class_type": "DiffusionModelLoaderKJ",
+    "_meta": {
+      "title": "Diffusion Model Loader KJ"
+    }
+  },
+  "170": {
+    "inputs": {
+      "lora_name": "H3\\minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+      "strength_model": 0.75,
+      "model": [
+        "144",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "176": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "AnimateDiff",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "122",
+        0
+      ],
+      "audio": [
+        "121",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "184": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "303",
+        9
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM",
+    "_meta": {
+      "title": "LayerUtility: Purge VRAM"
+    }
+  },
+  "189": {
+    "inputs": {
+      "enabled": true,
+      "tau_start": 1.3,
+      "tau_end": 0.8,
+      "curve": "linear",
+      "min_tokens": 4096,
+      "strict": false,
+      "dense_percent": 0,
+      "thresh_type": "diag",
+      "int8_qk": false,
+      "int8_pv": false,
+      "sink_conditioning": "exact_kv",
+      "dense_blocks": "",
+      "model": [
+        "202",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3ScheduledSolAttentionPatch",
+    "_meta": {
+      "title": "MiniMax H3 Scheduled Sol Attention Patch"
+    }
+  },
+  "190": {
+    "inputs": {
+      "enabled": true,
+      "chunks": 2,
+      "min_tokens": 8192,
+      "model": [
+        "189",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3ChunkFeedForward",
+    "_meta": {
+      "title": "MiniMax H3 Chunk FeedForward"
+    }
+  },
+  "192": {
+    "inputs": {
+      "reuse_threshold": 0.2,
+      "start_percent": 0.15,
+      "end_percent": 0.95,
+      "verbose": false,
+      "model": [
+        "190",
+        0
+      ]
+    },
+    "class_type": "EasyCache",
+    "_meta": {
+      "title": "EasyCache"
+    }
+  },
+  "194": {
+    "inputs": {
+      "output": "",
+      "source": [
+        "303",
+        9
+      ]
+    },
+    "class_type": "Display Any (rgthree)",
+    "_meta": {
+      "title": "Display Any (rgthree)"
+    }
+  },
+  "201": {
+    "inputs": {
+      "noise": [
+        "129",
+        0
+      ],
+      "guider": [
+        "126",
+        0
+      ],
+      "sampler": [
+        "123",
+        0
+      ],
+      "sigmas": [
+        "124",
+        0
+      ],
+      "latent_image": [
+        "136",
+        1
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "202": {
+    "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+        "170",
+        0
+      ]
+    },
+    "class_type": "ModelAttentionBackend",
+    "_meta": {
+      "title": "ModelAttentionBackend"
+    }
+  },
+  "207": {
+    "inputs": {
+      "noise_seed": [
+        "303",
+        7
+      ]
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "208": {
+    "inputs": {
+      "model": [
+        "192",
+        0
+      ],
+      "conditioning": [
+        "136",
+        0
+      ]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {
+      "title": "Basic Guider"
+    }
+  },
+  "209": {
+    "inputs": {
+      "noise": [
+        "207",
+        0
+      ],
+      "guider": [
+        "208",
+        0
+      ],
+      "sampler": [
+        "210",
+        0
+      ],
+      "sigmas": [
+        "215",
+        0
+      ],
+      "latent_image": [
+        "222",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "210": {
+    "inputs": {
+      "sampler_name": "er_sde"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "211": {
+    "inputs": {
+      "scheduler": "beta",
+      "steps": 4,
+      "denoise": 1,
+      "model": [
+        "192",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "BasicScheduler"
+    }
+  },
+  "215": {
+    "inputs": {
+      "sigmas": "0.85, 0.7250, 0.4219, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "More faithful / less hallucination"
+    }
+  },
+  "216": {
+    "inputs": {
+      "sigmas": "0.909375, 0.725, 0.421875, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "Maximum detail"
+    }
+  },
+  "217": {
+    "inputs": {
+      "sigmas": "0.95, 0.75, 0.45, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "More aggressive detail reconstruction"
+    }
+  },
+  "218": {
+    "inputs": {
+      "samples": [
+        "309",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "220": {
+    "inputs": {
+      "av_latent": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "221": {
+    "inputs": {
+      "model_name": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
+      "mode": "megapixels",
+      "mode.megapixels": [
+        "300",
+        1
+      ],
+      "align": 32,
+      "enable_chunking": false,
+      "device": "cuda",
+      "precision": "fp16",
+      "latent": [
+        "309",
+        2
+      ]
+    },
+    "class_type": "MinimaxH3LatentUpscaler3D",
+    "_meta": {
+      "title": "Minimax H3 Latent Upscaler (3D)"
+    }
+  },
+  "222": {
+    "inputs": {
+      "video_latent": [
+        "221",
+        0
+      ],
+      "audio_latent": [
+        "220",
+        1
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "223": {
+    "inputs": {
+      "sigmas": "0.9035, 0.8000, 0.6316, 0.3158, 0.0000"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "4 step Sigmas"
+    }
+  },
+  "230": {
+    "inputs": {
+      "any_01": [
+        "215",
+        0
+      ],
+      "any_02": [
+        "216",
+        0
+      ],
+      "any_03": [
+        "217",
+        0
+      ],
+      "any_04": [
+        "223",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Any Switch (rgthree)"
+    }
+  },
+  "300": {
+    "inputs": {
+      "project_name": "delhi_rap",
+      "fps": 24.0,
+      "aspect_ratio": "9:16",
+      "render_pass": "draft",
+      "draft_megapixels": 0.3,
+      "final_megapixels": 1.2,
+      "align": 32,
+      "base_seed": 12345,
+      "frame_modulus": 17,
+      "frame_remainder": 5,
+      "frame_minimum": 5,
+      "snap": "up",
+      "max_segment_seconds": 6.0,
+      "default_duration": 6.0,
+      "stale_minutes": 30
+    },
+    "class_type": "H3PlannerProject",
+    "_meta": {
+      "title": "H3 Project"
+    }
+  },
+  "301": {
+    "inputs": {
+      "cast_json": "{\"entries\": []}"
+    },
+    "class_type": "H3PlannerCastBoard",
+    "_meta": {
+      "title": "H3 Cast Board"
+    }
+  },
+  "302": {
+    "inputs": {
+      "project": [
+        "300",
+        0
+      ],
+      "source": "saved",
+      "timeline_json": "{\n \"name\": \"delhi-rap\",\n \"segments\": [\n  {\n   \"id\": \"s1\",\n   \"beat\": \"hook\",\n   \"duration\": 3.0,\n   \"audio_start\": 0.0,\n   \"link\": \"cut\",\n   \"cast_used\": [\n    \"hero\"\n   ],\n   \"prompt\": {\n    \"subject_definitions\": \"<Subject 1> is the young rapper in the reference image, in a 2D illustrated style with a black hooded jacket and a thin gold chain.\",\n    \"summary\": \"[reference generation] A short opening hook in which <Subject 1> turns to face the camera on a Delhi street.\",\n    \"retention_analysis\": \"<Subject 1>: attribute_transfer, [Shot 1]\",\n    \"detailed_description\": \"[Shot 1] 2D-animated, cinematic, a medium shot frames <Subject 1> standing against a shuttered market storefront as he turns his head to face the lens. The camera pushes in with small amplitude at slow speed.\",\n    \"overall_soundscape\": \"Distant traffic, a shutter rattling, footsteps on concrete.\",\n    \"non_diegetic_music\": \"N/A\"\n   }\n  },\n  {\n   \"id\": \"s2\",\n   \"beat\": \"verse-1\",\n   \"duration\": 8.0,\n   \"audio_start\": 3.0,\n   \"link\": \"continue\",\n   \"cast_used\": [\n    \"hero\",\n    \"city\"\n   ],\n   \"prompt\": {\n    \"subject_definitions\": \"<Subject 1> is the young rapper described above. <Subject 2> is the Delhi street location from the second reference image.\",\n    \"summary\": \"[reference generation] <Subject 1> performs the first verse while walking through <Subject 2>.\",\n    \"retention_analysis\": \"<Subject 1>: attribute_transfer, [Shot 1], [Shot 2]\\n<Subject 2>: partially_preserved, [Shot 1]\",\n    \"detailed_description\": \"[Shot 1] <Subject 1> walks toward the camera through <Subject 2>, the shot tracking backward ahead of him. [Shot 2] At 00:04.000 the camera cuts to a low-angle close shot as he delivers the line straight to lens.\",\n    \"overall_soundscape\": \"Street ambience, passing autorickshaws, cloth flapping.\",\n    \"non_diegetic_music\": \"N/A\"\n   }\n  },\n  {\n   \"id\": \"s3\",\n   \"beat\": \"outro\",\n   \"duration\": 4.0,\n   \"audio_start\": 11.0,\n   \"link\": \"cut\",\n   \"cast_used\": [\n    \"city\"\n   ],\n   \"prompt\": {\n    \"subject_definitions\": \"<Subject 2> is the Delhi street location from the second reference image.\",\n    \"summary\": \"[reference generation] A wide closing shot of <Subject 2> emptying out as the verse ends.\",\n    \"retention_analysis\": \"<Subject 2>: partially_preserved, [Shot 1]\",\n    \"detailed_description\": \"[Shot 1] 2D-animated, cinematic, a wide static shot of <Subject 2> at dusk, the street thinning out as the last figures walk out of frame.\",\n    \"overall_soundscape\": \"Traffic receding, a distant horn.\",\n    \"non_diegetic_music\": \"N/A\"\n   }\n  }\n ]\n}",
+      "on_change": "merge",
+      "reset_failed": true,
+      "file_path": "",
+      "cast": [
+        "301",
+        0
+      ]
+    },
+    "class_type": "H3PlannerTimeline",
+    "_meta": {
+      "title": "H3 Timeline"
+    }
+  },
+  "303": {
+    "inputs": {
+      "project": [
+        "300",
+        0
+      ],
+      "timeline": [
+        "302",
+        0
+      ],
+      "mode": "next_pending",
+      "manual_index": 1,
+      "range_start": 1,
+      "range_end": 0,
+      "force_rerender": false,
+      "prompt_format": "full_reference_6",
+      "reset_stuck": false,
+      "cast": [
+        "301",
+        0
+      ]
+    },
+    "class_type": "H3PlannerDispatcher",
+    "_meta": {
+      "title": "H3 Shot Dispatcher"
+    }
+  },
+  "304": {
+    "inputs": {
+      "audio": [
+        "301",
+        9
+      ],
+      "shot": [
+        "303",
+        0
+      ],
+      "pad_short": true,
+      "offset_seconds": 0.0
+    },
+    "class_type": "H3PlannerTrackSlice",
+    "_meta": {
+      "title": "H3 Track Slice"
+    }
+  },
+  "309": {
+    "inputs": {
+      "shot": [
+        "303",
+        0
+      ],
+      "latent": [
+        "220",
+        0
+      ]
+    },
+    "class_type": "H3PlannerPassGate",
+    "_meta": {
+      "title": "H3 Pass Gate"
+    }
+  },
+  "305": {
+    "inputs": {
+      "shot": [
+        "309",
+        1
+      ],
+      "images": [
+        "218",
+        0
+      ],
+      "audio": [
+        "121",
+        0
+      ],
+      "save_last_frame": true,
+      "auto_advance": false,
+      "max_auto_runs": 24
+    },
+    "class_type": "H3PlannerVaultWrite",
+    "_meta": {
+      "title": "H3 Vault Write (draft)"
+    }
+  },
+  "310": {
+    "inputs": {
+      "shot": [
+        "309",
+        3
+      ],
+      "images": [
+        "122",
+        0
+      ],
+      "audio": [
+        "121",
+        0
+      ],
+      "save_last_frame": true,
+      "auto_advance": false,
+      "max_auto_runs": 24
+    },
+    "class_type": "H3PlannerVaultWrite",
+    "_meta": {
+      "title": "H3 Vault Write (final)"
+    }
+  },
+  "312": {
+    "inputs": {
+      "image": [
+        "301",
+        2
+      ],
+      "width": [
+        "303",
+        3
+      ],
+      "height": [
+        "303",
+        4
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "resize",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu"
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize reference 2"
+    }
+  }
+}

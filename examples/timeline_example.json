@@ -1,0 +1,54 @@
+{
+  "name": "delhi-rap",
+  "_note": "Paste into H3 Timeline (inline), or point file_path at this file. Durations are what the CUT needs; the dispatcher rounds each up to the nearest legal H3 length and the stitcher trims it back. 8.0s happens to land exactly on a rung (192 frames); 3.0 and 4.0 do not.",
+  "segments": [
+    {
+      "id": "s1",
+      "beat": "hook",
+      "duration": 3.0,
+      "audio_start": 0.0,
+      "link": "cut",
+      "cast_used": ["hero"],
+      "prompt": {
+        "subject_definitions": "<Subject 1> is the young rapper in the reference image, in a 2D illustrated style with a black hooded jacket and a thin gold chain.",
+        "summary": "[reference generation] A short opening hook in which <Subject 1> turns to face the camera on a Delhi street.",
+        "retention_analysis": "<Subject 1>: attribute_transfer, [Shot 1]",
+        "detailed_description": "[Shot 1] 2D-animated, cinematic, a medium shot frames <Subject 1> standing against a shuttered market storefront as he turns his head to face the lens. The camera pushes in with small amplitude at slow speed.",
+        "overall_soundscape": "Distant traffic, a shutter rattling, footsteps on concrete.",
+        "non_diegetic_music": "N/A"
+      }
+    },
+    {
+      "id": "s2",
+      "beat": "verse-1",
+      "duration": 8.0,
+      "audio_start": 3.0,
+      "link": "continue",
+      "cast_used": ["hero", "city"],
+      "prompt": {
+        "subject_definitions": "<Subject 1> is the young rapper described above. <Subject 2> is the Delhi street location from the second reference image.",
+        "summary": "[reference generation] <Subject 1> performs the first verse while walking through <Subject 2>.",
+        "retention_analysis": "<Subject 1>: attribute_transfer, [Shot 1], [Shot 2]\n<Subject 2>: partially_preserved, [Shot 1]",
+        "detailed_description": "[Shot 1] <Subject 1> walks toward the camera through <Subject 2>, the shot tracking backward ahead of him. [Shot 2] At 00:04.000 the camera cuts to a low-angle close shot as he delivers the line straight to lens.",
+        "overall_soundscape": "Street ambience, passing autorickshaws, cloth flapping.",
+        "non_diegetic_music": "N/A"
+      }
+    },
+    {
+      "id": "s3",
+      "beat": "outro",
+      "duration": 4.0,
+      "audio_start": 11.0,
+      "link": "cut",
+      "cast_used": ["city"],
+      "prompt": {
+        "subject_definitions": "<Subject 2> is the Delhi street location from the second reference image.",
+        "summary": "[reference generation] A wide closing shot of <Subject 2> emptying out as the verse ends.",
+        "retention_analysis": "<Subject 2>: partially_preserved, [Shot 1]",
+        "detailed_description": "[Shot 1] 2D-animated, cinematic, a wide static shot of <Subject 2> at dusk, the street thinning out as the last figures walk out of frame.",
+        "overall_soundscape": "Traffic receding, a distant horn.",
+        "non_diegetic_music": "N/A"
+      }
+    }
+  ]
+}

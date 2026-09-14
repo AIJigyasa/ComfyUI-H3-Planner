@@ -1,0 +1,130 @@
+{
+  "300": {
+    "inputs": {
+      "project_name": "delhi_rap",
+      "fps": 24.0,
+      "aspect_ratio": "9:16",
+      "render_pass": "draft",
+      "draft_megapixels": 0.3,
+      "final_megapixels": 1.2,
+      "align": 32,
+      "base_seed": 12345,
+      "frame_modulus": 17,
+      "frame_remainder": 5,
+      "frame_minimum": 5,
+      "snap": "up",
+      "max_segment_seconds": 6.0,
+      "default_duration": 6.0,
+      "stale_minutes": 30
+    },
+    "class_type": "H3PlannerProject",
+    "_meta": {
+      "title": "H3 Project"
+    }
+  },
+  "301": {
+    "inputs": {
+      "cast_json": "{\"entries\": []}"
+    },
+    "class_type": "H3PlannerCastBoard",
+    "_meta": {
+      "title": "H3 Cast Board"
+    }
+  },
+  "193": {
+    "inputs": {
+      "idea": "the person in <Picture 1> is rapping in different parts of delhi, use nice camera work, use audio trascription, he is rapping these hindi lyrics. make sure you change it on beats. add lyrics so it has better lip sync. the artstyle is the same as character. 2d illustration artstyle",
+      "target_duration": 120.0,
+      "reference_intent": "reference generation",
+      "reference_notes": "",
+      "audio_transcript_or_notes": "",
+      "provider": "Ollama (Local)",
+      "api_key": "",
+      "api_model": "gemini-2.0-flash",
+      "ollama_url": "http://127.0.0.1:11434",
+      "ollama_model": "qwen3-vl:8b",
+      "temperature": 0.25,
+      "keep_alive": "10m",
+      "request_timeout": 600,
+      "max_output_tokens": 4096,
+      "num_ctx": 8192,
+      "enable_reference_analysis": true,
+      "whisper_model": "small",
+      "whisper_device": "auto",
+      "enable_audio_transcription": true,
+      "refresh_local_models": "Refresh Ollama Models",
+      "reference_audio": [
+        "301",
+        9
+      ]
+    },
+    "class_type": "H3FullReferenceVideoPromptCreator",
+    "_meta": {
+      "title": "H3 Full-Reference Video Prompt Creator"
+    }
+  },
+  "308": {
+    "inputs": {
+      "project": [
+        "300",
+        0
+      ],
+      "h3_prompt": [
+        "193",
+        0
+      ],
+      "total_seconds": 120.0,
+      "segment_seconds": 10.0,
+      "shots_per_segment": 1,
+      "format": "music video",
+      "audio_role": "performed on camera",
+      "provider": "Ollama (Local)",
+      "ollama_url": "http://127.0.0.1:11434",
+      "ollama_model": "qwen3-vl:8b",
+      "temperature": 0.25,
+      "reuse_existing": true,
+      "seed": 0,
+      "cast": [
+        "301",
+        0
+      ],
+      "idea": "",
+      "style_prefix_override": "",
+      "api_key": "",
+      "api_model": "",
+      "max_output_tokens": 3072,
+      "num_ctx": 8192,
+      "keep_alive": "10m",
+      "request_timeout": 600
+    },
+    "class_type": "H3PlannerSegmentPrompter",
+    "_meta": {
+      "title": "H3 Segment Prompter"
+    }
+  },
+  "302": {
+    "inputs": {
+      "project": [
+        "300",
+        0
+      ],
+      "source": "inline",
+      "timeline_json": "{\n \"name\": \"delhi-rap\",\n \"segments\": [\n  {\n   \"id\": \"s1\",\n   \"beat\": \"hook\",\n   \"duration\": 3.0,\n   \"audio_start\": 0.0,\n   \"link\": \"cut\",\n   \"cast_used\": [\n    \"hero\"\n   ],\n   \"prompt\": {\n    \"subject_definitions\": \"<Subject 1> is the young rapper in the reference image, in a 2D illustrated style with a black hooded jacket and a thin gold chain.\",\n    \"summary\": \"[reference generation] A short opening hook in which <Subject 1> turns to face the camera on a Delhi street.\",\n    \"retention_analysis\": \"<Subject 1>: attribute_transfer, [Shot 1]\",\n    \"detailed_description\": \"[Shot 1] 2D-animated, cinematic, a medium shot frames <Subject 1> standing against a shuttered market storefront as he turns his head to face the lens. The camera pushes in with small amplitude at slow speed.\",\n    \"overall_soundscape\": \"Distant traffic, a shutter rattling, footsteps on concrete.\",\n    \"non_diegetic_music\": \"N/A\"\n   }\n  },\n  {\n   \"id\": \"s2\",\n   \"beat\": \"verse-1\",\n   \"duration\": 8.0,\n   \"audio_start\": 3.0,\n   \"link\": \"continue\",\n   \"cast_used\": [\n    \"hero\",\n    \"city\"\n   ],\n   \"prompt\": {\n    \"subject_definitions\": \"<Subject 1> is the young rapper described above. <Subject 2> is the Delhi street location from the second reference image.\",\n    \"summary\": \"[reference generation] <Subject 1> performs the first verse while walking through <Subject 2>.\",\n    \"retention_analysis\": \"<Subject 1>: attribute_transfer, [Shot 1], [Shot 2]\\n<Subject 2>: partially_preserved, [Shot 1]\",\n    \"detailed_description\": \"[Shot 1] <Subject 1> walks toward the camera through <Subject 2>, the shot tracking backward ahead of him. [Shot 2] At 00:04.000 the camera cuts to a low-angle close shot as he delivers the line straight to lens.\",\n    \"overall_soundscape\": \"Street ambience, passing autorickshaws, cloth flapping.\",\n    \"non_diegetic_music\": \"N/A\"\n   }\n  },\n  {\n   \"id\": \"s3\",\n   \"beat\": \"outro\",\n   \"duration\": 4.0,\n   \"audio_start\": 11.0,\n   \"link\": \"cut\",\n   \"cast_used\": [\n    \"city\"\n   ],\n   \"prompt\": {\n    \"subject_definitions\": \"<Subject 2> is the Delhi street location from the second reference image.\",\n    \"summary\": \"[reference generation] A wide closing shot of <Subject 2> emptying out as the verse ends.\",\n    \"retention_analysis\": \"<Subject 2>: partially_preserved, [Shot 1]\",\n    \"detailed_description\": \"[Shot 1] 2D-animated, cinematic, a wide static shot of <Subject 2> at dusk, the street thinning out as the last figures walk out of frame.\",\n    \"overall_soundscape\": \"Traffic receding, a distant horn.\",\n    \"non_diegetic_music\": \"N/A\"\n   }\n  }\n ]\n}",
+      "on_change": "merge",
+      "reset_failed": true,
+      "file_path": "",
+      "cast": [
+        "301",
+        0
+      ],
+      "timeline": [
+        "308",
+        0
+      ]
+    },
+    "class_type": "H3PlannerTimeline",
+    "_meta": {
+      "title": "H3 Timeline"
+    }
+  }
+}

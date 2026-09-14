@@ -1,0 +1,12 @@
+# Optional. Only the H3 Beat Map needs this.
+#
+# Deliberately not named requirements.txt: ComfyUI Manager installs that file
+# automatically for everyone, and every other node in this pack works without
+# librosa. Install it yourself, into the Python that runs ComfyUI:
+#
+#   python -m pip install -r requirements-audio.txt
+#
+# ComfyUI portable / Easy-Install on Windows uses its own embedded Python:
+#
+#   python_embeded\python.exe -m pip install -r requirements-audio.txt
+librosa>=0.10
