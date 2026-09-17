@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-h3-planner"
 description = "Plan, render and stitch long MiniMax H3 videos in ComfyUI. A Story Planner writes a whole advert or short film from one brief, a Beat Map cuts a music video on the bar lines, and every segment renders one per queue run into a vault that stitches back to the exact planned durations. Sampling stays in your own graph."
-version = "0.1.1"
+version = "0.2.0"
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
