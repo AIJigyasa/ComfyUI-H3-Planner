@@ -15,8 +15,10 @@ import { api } from "../../scripts/api.js";
  */
 
 const ROLE_TAGS = {
-  character: "Subject", product: "Subject", style: "Subject",
-  wardrobe: "Subject", environment: "Subject", prop: "Subject",
+  // Every image is a <Picture N>. Subjects are found inside pictures by the
+  // prompt analysis, and one picture can hold several of them.
+  character: "Picture", product: "Picture", style: "Picture",
+  wardrobe: "Picture", environment: "Picture", prop: "Picture",
   first_frame: "Picture", last_frame: "Picture",
   keyframe: "Picture", composition: "Picture",
   video: "Video", audio: "Audio",
@@ -174,7 +176,7 @@ class CastBoard {
     const counters = { Subject: 0, Picture: 0, Video: 0, Audio: 0 };
     return this.doc.entries.map((entry) => {
       if (entry.disabled) return "";
-      const kind = ROLE_TAGS[entry.role] || "Subject";
+      const kind = ROLE_TAGS[entry.role] || "Picture";
       counters[kind] += 1;
       return `<${kind} ${counters[kind]}>`;
     });
@@ -185,7 +187,7 @@ class CastBoard {
     for (let i = 0; i <= index; i++) {
       const e = this.doc.entries[i];
       if (e.disabled) continue;
-      const kind = ROLE_TAGS[e.role] || "Subject";
+      const kind = ROLE_TAGS[e.role] || "Picture";
       if (kind === "Subject" || kind === "Picture") slot += 1;
     }
     return slot;
@@ -278,7 +280,7 @@ class CastBoard {
     this.bar.replaceChildren();
     const counts = { Subject: 0, Picture: 0, Video: 0, Audio: 0 };
     for (const e of this.doc.entries) {
-      if (!e.disabled) counts[ROLE_TAGS[e.role] || "Subject"]++;
+      if (!e.disabled) counts[ROLE_TAGS[e.role] || "Picture"]++;
     }
     const label = document.createElement("span");
     label.textContent = Object.entries(counts)
@@ -320,7 +322,7 @@ class CastBoard {
     this.doc.entries.forEach((entry, i) => {
       const card = document.createElement("div");
       card.className = "h3c-card" + (entry.disabled ? " off" : "");
-      const kind = ROLE_TAGS[entry.role] || "Subject";
+      const kind = ROLE_TAGS[entry.role] || "Picture";
 
       const tag = document.createElement("div");
       tag.className = "h3c-tag";
@@ -381,8 +383,8 @@ class CastBoard {
         entry.role = allowed[0];
         role.value = allowed[0];
       }
-      role.title = "Role decides the tag kind. Identity that recurs is a Subject; " +
-        "a concrete first/last/key frame is a Picture.";
+      role.title = "A label for what this picture is. Every image is tagged <Picture N>; " +
+        "the people and objects inside it get <Subject N> from the prompt analysis.";
       role.onchange = () => { entry.role = role.value; this.write(); this.render(); };
       card.append(role);
 
@@ -497,12 +499,12 @@ class CastBoard {
 
   renderFoot() {
     const images = this.doc.entries.filter(
-      (e) => !e.disabled && ["Subject", "Picture"].includes(ROLE_TAGS[e.role] || "Subject")).length;
+      (e) => !e.disabled && ["Subject", "Picture"].includes(ROLE_TAGS[e.role] || "Picture")).length;
     const bits = [`${images} image slot(s) wired out`];
     if (images > MAX_IMAGE_SLOTS) {
       bits.push(`only the first ${MAX_IMAGE_SLOTS} reach the sampler`);
     }
-    bits.push("Subject = recurring identity · Picture = a concrete frame anchor");
+    bits.push("Every image is a <Picture N> · subjects inside them are tagged by the prompt analysis");
     this.foot.textContent = bits.join("  ·  ");
   }
 

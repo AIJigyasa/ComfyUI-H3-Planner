@@ -226,30 +226,108 @@ class H3PlannerTimeline:
     def IS_CHANGED(cls, **kwargs):
         return store.run_token()
 
+    # Every authored field a planner hands over. A whitelist, because runtime
+    # state (clips, take, claimed_at) must not become authored truth. It has
+    # to list every authored field though: the Story Planner's scene grouping,
+    # its opens/ends handover and its spoken lines were all silently dropped
+    # here once, so a replan lost the script and the card strip never saw a
+    # scene.
+    AUTHORED_FIELDS = ("id", "beat", "prompt", "target_duration", "link",
+                       "cast_used", "audio_start", "notes", "source",
+                       "prompt_fingerprint", "scene", "scene_name",
+                       "opens_from", "ends_with", "dialogue", "speaker",
+                       "refine_note")
+
+    @staticmethod
+    def _previous_authored(timeline_json, names):
+        """The card strip's own segments, by id, from the widget.
+
+        Only the widget knows about a refine or a hand edit by the time the
+        graph runs: the planner upstream has usually saved its own prompts
+        over the timeline on disk a moment earlier. A widget written for a
+        different project is ignored rather than leaking its edits across.
+        """
+        try:
+            doc = json.loads(timeline_json or "")
+        except (TypeError, ValueError):
+            return {}
+        if isinstance(doc, list):
+            doc = {"segments": doc}
+        if not isinstance(doc, dict):
+            return {}
+        owner = doc.get("name") or doc.get("project")
+        if owner and owner not in names:
+            return {}
+        return {s["id"]: s for s in doc.get("segments") or []
+                if isinstance(s, dict) and s.get("id")}
+
+    @classmethod
+    def _adopt(cls, upstream, previous):
+        """Upstream segments, keeping any prompt the user refined or edited.
+
+        The rule, per segment, compares three prompts: the one the planner
+        delivered LAST time (recorded as planned_prompt_hash), the one on the
+        card now, and the one the planner delivers now.
+
+        - card unchanged since last delivery -> take the planner's prompt
+        - card edited, planner delivered the same as last time -> keep the edit
+        - card edited, planner delivered something new -> the planner re-wrote
+          this segment on purpose, so its prompt wins and the lost edit is
+          named in the report
+
+        Without this, a refined prompt lasted exactly until the next queue:
+        the planner in front of the Timeline handed its original prompt back,
+        the refine was overwritten, and the segment rendered the old shot
+        again.
+        """
+        segments, kept, replaced = [], [], []
+        for seg in upstream:
+            row = {k: seg[k] for k in cls.AUTHORED_FIELDS if k in seg}
+            delivered = store.prompt_hash(seg.get("prompt"))
+            row["planned_prompt_hash"] = delivered
+            before = previous.get(seg.get("id"))
+            if before is not None and before.get("prompt") not in (None, ""):
+                mine = store.prompt_hash(before.get("prompt"))
+                recorded = before.get("planned_prompt_hash")
+                if mine != delivered:
+                    if recorded:
+                        edited = mine != recorded
+                        planner_moved = delivered != recorded
+                    else:
+                        # A timeline from before this was recorded. A refine
+                        # leaves its note behind; a plain hand edit cannot be
+                        # told apart from a stale card, so the planner wins
+                        # once and the hash is recorded from here on.
+                        edited = bool((before.get("refine_note") or "").strip())
+                        planner_moved = False
+                    if edited and not planner_moved:
+                        row["prompt"] = before["prompt"]
+                        if before.get("refine_note"):
+                            row["refine_note"] = before["refine_note"]
+                        kept.append(row["id"])
+                    elif edited:
+                        # The note described the prompt that was just lost.
+                        row["refine_note"] = ""
+                        replaced.append(row["id"])
+            segments.append(row)
+        return segments, kept, replaced
+
     def build(self, project, source, timeline_json, on_change, reset_failed,
               file_path="", cast=None, timeline=None):
+        kept_edits, lost_edits = [], []
         if timeline is not None:
-            # A prompted timeline arrived from upstream. Adopt it wholesale and
-            # mirror it into the widget, so the card strip shows the generated
-            # prompts and hand edits from here on are the authored truth.
+            # A prompted timeline arrived from upstream. Adopt it and mirror it
+            # into the widget, so the card strip shows the generated prompts,
+            # but keep any prompt refined or edited on a card since the
+            # planner last delivered it.
+            previous = self._previous_authored(
+                timeline_json, {project["name"], timeline.get("name")})
+            segments, kept_edits, lost_edits = self._adopt(
+                timeline["segments"], previous)
             authored = {
                 "name": timeline.get("name", project["name"]),
                 "context": timeline.get("context", {}),
-                # A whitelist, because runtime state (clips, take, claimed_at)
-                # must not become authored truth. It has to list every authored
-                # field though: the Story Planner's scene grouping, its
-                # opens/ends handover and its spoken lines were all silently
-                # dropped here, so a replan lost the script and the card strip
-                # never saw a scene.
-                "segments": [
-                    {k: seg[k] for k in
-                     ("id", "beat", "prompt", "target_duration", "link",
-                      "cast_used", "audio_start", "notes", "source",
-                      "prompt_fingerprint", "scene", "scene_name",
-                      "opens_from", "ends_with", "dialogue", "speaker",
-                      "refine_note")
-                     if k in seg}
-                    for seg in timeline["segments"]],
+                "segments": segments,
             }
             raw = json.dumps(authored, indent=1, ensure_ascii=False)
         elif source == "saved":
@@ -316,7 +394,9 @@ class H3PlannerTimeline:
             size = cast.get("size", 0)
             for seg in fresh["segments"]:
                 for kind, numbers in cited_tags(seg["prompt"]).items():
-                    if kind in ("Subject", "Picture"):
+                    # Pictures only: subjects live inside pictures and a
+                    # two-picture cast can hold five of them.
+                    if kind == "Picture":
                         over = sorted(n for n in numbers if n > size)
                         if over:
                             cites = ", ".join("<%s %d>" % (kind, n) for n in over)
@@ -366,6 +446,20 @@ class H3PlannerTimeline:
                            for s in timeline["segments"])
         carried = sum(1 for s in timeline["segments"] if s.get("clips"))
 
+        edits = []
+        if kept_edits:
+            edits.append("kept your edited prompt on %s: the planner "
+                         "upstream delivered the same prompt as before, so "
+                         "the edit stands and renders"
+                         % ", ".join(kept_edits))
+        if lost_edits:
+            warnings.append(
+                "REPLACED your edited prompt on %s: the planner re-wrote %s, "
+                "so its new prompt is used. Refine again if you still want "
+                "the change."
+                % (", ".join(lost_edits),
+                   "that segment" if len(lost_edits) == 1 else "those segments"))
+
         report = "\n".join([
             store.summary(timeline, project["render_pass"]),
             "",
@@ -373,6 +467,7 @@ class H3PlannerTimeline:
             "back %.3fs" % (target_total, len(timeline["segments"]),
                             render_total, render_total - target_total),
             "%d segment(s) kept existing clips" % carried,
+        ] + edits + [
             "saved to %s" % tl_path,
         ] + (["", "WARNINGS", "! " + "\n! ".join(warnings)] if warnings else []))
 

@@ -357,6 +357,38 @@ def write_thumbnail(images, path, max_width=384, quality=80):
 # assembly
 # --------------------------------------------------------------------------
 
+def frame_plan(durations, fps, available=None):
+    """How many whole frames each clip keeps, against a running clock.
+
+    A clip can only be cut on a frame boundary, and cutting each one on its
+    own always rounds the same way: `trim=end=5.931` at 24 fps keeps the frame
+    that STARTS at 5.917 and so runs to 5.958. That is 27 ms of extra picture,
+    per cut, never repaid. Fifteen cuts of a real 86-second music video came
+    out at 2073 frames where the song is 2064, the audio drifting a third of a
+    second late by the end, and a stitch with the original track laid over it
+    had its last 9 frames chopped by -shortest instead.
+
+    Rounding each boundary's POSITION on the timeline, not each clip's length,
+    keeps every cut within half a frame of where the plan put it and makes the
+    total exactly round(total * fps). The error cannot build up because each
+    clip's frames are measured from the true musical time, not from the end of
+    the previous clip's rounding.
+    """
+    fps = float(fps)
+    plan, clock, placed = [], 0.0, 0
+    for i, dur in enumerate(durations):
+        clock += max(0.0, float(dur))
+        edge = int(round(clock * fps))
+        count = max(1, edge - placed)
+        if available is not None and available[i]:
+            # A clip shorter than its plan cannot supply the frames; the
+            # stitcher already reports that as OUT OF SYNC.
+            count = min(count, int(available[i]))
+        plan.append(count)
+        placed += count
+    return plan
+
+
 def concat_trimmed(clips, out_path, fps, width, height,
                    sample_rate=48000, crf=18, include_audio=True):
     """Trim each clip to its planned duration and join them.
@@ -381,22 +413,29 @@ def concat_trimmed(clips, out_path, fps, width, height,
         cmd += ["-f", "lavfi", "-t", "1",
                 "-i", "anullsrc=channel_layout=stereo:sample_rate=%d" % sample_rate]
 
+    counts = frame_plan([c["duration"] for c in clips], fps,
+                        [c.get("frames") for c in clips])
     parts, labels = [], []
     for i, clip in enumerate(clips):
-        dur = float(clip["duration"])
+        frames = counts[i]
+        # The audio is cut to exactly the picture's length. Two different
+        # lengths per segment make the concat filter pad the shorter stream
+        # with silence, which is what walked the sound out of sync.
+        dur = frames / float(fps)
         parts.append(
-            "[%d:v]trim=end=%.6f,setpts=PTS-STARTPTS,"
+            "[%d:v]trim=end_frame=%d,setpts=PTS-STARTPTS,"
             "scale=%d:%d:force_original_aspect_ratio=decrease,"
             "pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=%s[v%d]"
-            % (i, dur, width, height, width, height, fps, i))
+            % (i, frames, width, height, width, height, fps, i))
         labels.append("[v%d]" % i)
         if not want_audio:
             continue
         if clip.get("has_audio"):
             parts.append(
-                "[%d:a]atrim=end=%.6f,asetpts=PTS-STARTPTS,"
-                "aresample=%d,aformat=channel_layouts=stereo[a%d]"
-                % (i, dur, sample_rate, i))
+                "[%d:a]atrim=start=0:end=%.6f,asetpts=PTS-STARTPTS,"
+                "aresample=%d,apad,atrim=end=%.6f,"
+                "aformat=channel_layouts=stereo[a%d]"
+                % (i, dur, sample_rate, dur, i))
         else:
             parts.append(
                 "[%d:a]atrim=end=%.6f,asetpts=PTS-STARTPTS,"

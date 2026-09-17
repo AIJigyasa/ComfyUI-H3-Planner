@@ -73,6 +73,13 @@ def spec_hash(segment):
     return hashlib.sha1(blob).hexdigest()[:16]
 
 
+def prompt_hash(prompt):
+    """A stable fingerprint of a prompt, whether text or six sections."""
+    blob = json.dumps(prompt if prompt is not None else "", sort_keys=True,
+                      ensure_ascii=False, default=str).encode("utf-8")
+    return hashlib.sha1(blob).hexdigest()[:16]
+
+
 def derive_seed(base_seed, index, salt=0):
     """Deterministic per-segment seed, stable across re-plans."""
     raw = "%d:%d:%d" % (int(base_seed), int(index), int(salt))
@@ -148,6 +155,10 @@ def normalize_segment(raw, index, project):
         # The last plain-English note used to refine this shot, kept so
         # the card can show what was asked for.
         "refine_note": str(raw.get("refine_note", "")),
+        # The prompt as the planner last delivered it. Comparing the card
+        # against it is the only way to tell a refine or a hand edit from a
+        # stale copy, so an edit can survive the planner re-running upstream.
+        "planned_prompt_hash": str(raw.get("planned_prompt_hash", "")),
         # What the splitter cut this segment from: the source shots with their
         # timestamps rebased to zero. Read by the prompter, ignored by everyone
         # else, and outside SPEC_FIELDS because the prompt it produces is what

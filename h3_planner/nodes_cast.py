@@ -38,14 +38,16 @@ MAX_VIDEO_INPUTS = 4
 
 MAX_SLOTS = MAX_IMAGE_SLOTS     # the old name, kept for anything importing it
 
-# role -> H3 tag kind
+# role -> H3 tag kind. Every image is a <Picture N>: the role only labels
+# what the picture is for. <Subject N> is not an asset, it is a person or
+# object the analysis finds INSIDE a picture, and one picture can hold many.
 ROLE_TAGS = {
-    "character": "Subject",
-    "product": "Subject",
-    "style": "Subject",
-    "wardrobe": "Subject",
-    "environment": "Subject",
-    "prop": "Subject",
+    "character": "Picture",
+    "product": "Picture",
+    "style": "Picture",
+    "wardrobe": "Picture",
+    "environment": "Picture",
+    "prop": "Picture",
     "first_frame": "Picture",
     "last_frame": "Picture",
     "keyframe": "Picture",
@@ -239,13 +241,13 @@ def assemble(cast_json, wired_images=(), wired_audios=(), wired_videos=()):
         if full(images, MAX_IMAGE_SLOTS, "image", "wired ref_image %d" % i):
             continue
         images.append(img)
-        counters["Subject"] += 1
+        counters["Picture"] += 1
         members.append({
             "slot": len(images), "key": "wired_image_%d" % i,
             "role": "character",
             "note": "connected to a ref_image input",
-            "kind": "Subject", "number": counters["Subject"],
-            "tag": "<Subject %d>" % counters["Subject"], "file": "",
+            "kind": "Picture", "number": counters["Picture"],
+            "tag": "<Picture %d>" % counters["Picture"], "file": "",
         })
 
     for i, aud in enumerate(wired_audios, start=1):

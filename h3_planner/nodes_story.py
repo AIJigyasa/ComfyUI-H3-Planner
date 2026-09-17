@@ -40,7 +40,8 @@ from .nodes_prompt import (FORMAT_GUIDANCE, FORMATS, AUDIO_ROLES, SECTIONS,
                            DIALOGUE_MODES,
                            audio_system_block, bind_tags,
                            _allowed_tags, _cast_block, _hash, asset_names,
-                           canonical_subjects, enforce_audio_exact,
+                           canonical_subjects, defined_subjects,
+                           enforce_audio_exact,
                            renumber_shots, strip_asset_names,
                            strip_unknown_tags)
 
@@ -74,8 +75,12 @@ changed halfway through the video in here.
     find yourself describing a plain studio backdrop, you have read it off the
     reference: throw it away and choose a real place.
 
-SUBJECT DEFINITIONS. Define each cast tag once, in the wording that will be
-reused for the whole video. One line per tag, beginning with the tag itself.
+SUBJECT DEFINITIONS. The cast supplies PICTURES, tagged <Picture N>. The
+subjects are the people and objects you find inside them: give each one its own
+<Subject N>, numbered from 1, and say which picture it comes from, for example
+"<Subject 3> the drummer from <Picture 1>". One picture can hold several
+subjects. Define each subject once, in the wording that will be reused for the
+whole video. One line per subject, beginning with its tag.
 Describe only what is visible and permanent — build, face, hair, wardrobe. Do
 not describe action here.
 
@@ -283,7 +288,7 @@ def speaker_id(index):
     return "(S%d)" % (index + 1)
 
 
-def cast_voices(cast, chosen=None):
+def cast_voices(cast, chosen=None, defined=""):
     """Which audio reference supplies which subject's voice.
 
     Returns ``[{"audio": "<Audio 1>", "subject": "<Subject 2>",
@@ -297,6 +302,11 @@ def cast_voices(cast, chosen=None):
     members = (cast or {}).get("members") or []
     audios = [m["tag"] for m in members if m.get("kind") == "Audio"]
     subjects = [m["tag"] for m in members if m.get("kind") == "Subject"]
+    # The board tags pictures now; subjects come from the director's
+    # subject_definitions, so a cast with no Subject members can still be voiced.
+    for n in sorted(defined_subjects(defined)):
+        if "<Subject %d>" % n not in subjects:
+            subjects.append("<Subject %d>" % n)
     if not audios:
         return []
 
@@ -1057,7 +1067,8 @@ class H3PlannerStoryPlanner:
         # "use <audio 1> for the male character" only exists in the brief, and
         # the director is the only pass that reads it. Untrusted like every
         # other field: cast_voices checks each pair against the real cast.
-        voices = cast_voices(cast, beats.get("voices"))
+        voices = cast_voices(cast, beats.get("voices"),
+                             beats.get("subject_definitions", ""))
 
         prefix = (style_prefix_override.strip()
                   or engine.clean(beats.get("style_prefix", "")))
@@ -1076,6 +1087,9 @@ class H3PlannerStoryPlanner:
         # the card before anything looked at it.
         subjects = [m["tag"] for m in (cast or {}).get("members", [])
                     if m.get("kind") == "Subject"]
+        subjects += ["<Subject %d>" % n for n in sorted(defined_subjects(
+            beats.get("subject_definitions", "")))
+            if "<Subject %d>" % n not in subjects]
         miscast = []
 
         rows = list(beats.get("segments") or [])

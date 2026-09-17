@@ -19,7 +19,7 @@ Slicer — because it reads the finished prompt rather than the planner's state.
 import os
 import re
 
-from . import engine, splitter, store
+from . import engine, splitter, store, vocals
 from .nodes_plan import cited_tags, flatten_prompt
 from .nodes_prompt import (SECTIONS, bind_tags, enforce_audio_exact,
                            renumber_shots, strip_unknown_tags)
@@ -135,8 +135,11 @@ def _assemble(new_body, original, seg, context, allowed):
                      "")
     if audio_tag:
         # Wanted for its invented-ambience strip on the description only; the
-        # two sound sections are the author's and are restored below.
-        prompt, _ = enforce_audio_exact(prompt, audio_tag)
+        # two sound sections are the author's and are restored below. The
+        # clip's vocal state comes along, or a revision of an instrumental clip
+        # could put the singing back.
+        prompt, _ = enforce_audio_exact(
+            prompt, audio_tag, clip_vocals=vocals.for_segment(context, seg))
 
     body = prompt["detailed_description"]
     body = _force_prefix(body, str((context or {}).get("style_prefix") or ""))

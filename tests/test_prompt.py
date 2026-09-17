@@ -161,8 +161,8 @@ try:
     ])
     audio = audios[0]
     got = [m["tag"] for m in cast["members"]]
-    check("Subject and Picture are numbered independently",
-          got, ["<Subject 1>", "<Subject 2>", "<Picture 1>",
+    check("every image is a Picture, numbered in card order",
+          got, ["<Picture 1>", "<Picture 2>", "<Picture 3>",
                 "<Audio 1>", "<Video 1>"])
     check("only images take slots", cast["size"], 3)
     check("image slots are filled from 1",
@@ -172,10 +172,10 @@ try:
     check("video path is reported", "plate.mp4" in report, True)
     check("and its frames reach the video slot", videos[0], ("FRAMES",
           os.path.join(tmp, "plate.mp4")))
-    check("a product image is a Subject, not a Picture",
-          cast["members"][1]["tag"], "<Subject 2>")
-    check("counts reported", cast["counts"],
-          {"Subject": 2, "Picture": 1, "Video": 1, "Audio": 1})
+    check("a product image is a Picture too; the role is only a label",
+          cast["members"][1]["tag"], "<Picture 2>")
+    check("the board hands out no Subject tags at all", cast["counts"],
+          {"Subject": 0, "Picture": 3, "Video": 1, "Audio": 1})
 
     # reordering renumbers within each kind
     cast2 = build([
@@ -184,7 +184,7 @@ try:
     ])[0]
     check("reordering renumbers the tags",
           [(m["key"], m["tag"]) for m in cast2["members"]],
-          [("bottle", "<Subject 1>"), ("hero", "<Subject 2>")])
+          [("bottle", "<Picture 1>"), ("hero", "<Picture 2>")])
 
     # a disabled entry is skipped without shifting the ones before it
     cast3 = build([
@@ -195,7 +195,7 @@ try:
     ])[0]
     check("disabled entries are skipped",
           [(m["key"], m["tag"]) for m in cast3["members"]],
-          [("hero", "<Subject 1>"), ("street", "<Subject 2>")])
+          [("hero", "<Picture 1>"), ("street", "<Picture 2>")])
 
     # a missing file is reported, not crashed on
     cast4 = build([
@@ -206,7 +206,7 @@ try:
     cast4 = cast4[0]
     check("a missing file is reported", "missing" in report4, True)
     check("and the rest still number from 1",
-          [m["tag"] for m in cast4["members"]], ["<Subject 1>"])
+          [m["tag"] for m in cast4["members"]], ["<Picture 1>"])
 
     # role/asset mismatch
     cast5 = build([
@@ -228,9 +228,29 @@ try:
         ref_videos={"ref_video_0": "CLIP"})
     check("wired images are numbered on from the uploads",
           [(m["key"], m["tag"]) for m in cast6["members"]],
-          [("hero", "<Subject 1>"), ("wired_image_1", "<Subject 2>"),
-           ("wired_image_2", "<Subject 3>"), ("wired_audio_1", "<Audio 1>"),
+          [("hero", "<Picture 1>"), ("wired_image_1", "<Picture 2>"),
+           ("wired_image_2", "<Picture 3>"), ("wired_audio_1", "<Audio 1>"),
            ("wired_video_1", "<Video 1>")])
+
+    # Subjects live inside pictures, as many as the analysis finds. A stage
+    # photo of a whole band in a two-picture cast used to lose its third
+    # member, because <Subject N> was capped at the number of images.
+    from h3_planner import nodes_prompt as NP
+    two = {"members": [{"tag": "<Picture 1>", "kind": "Picture", "slot": 1},
+                       {"tag": "<Picture 2>", "kind": "Picture", "slot": 2}]}
+    band = {"subject_definitions": "<Subject 1> the singer from <Picture 1>.\n"
+                                   "<Subject 2> the bassist from <Picture 1>.\n"
+                                   "<Subject 3> the drummer from <Picture 1>.",
+            "detailed_description": "[Shot 1] <Subject 3> hits the snare. "
+                                    "<Subject 5> waves from the crowd."}
+    kept, gone = NP.strip_unknown_tags(dict(band), NP._allowed_tags(two))
+    check("a third subject in a two-picture cast survives",
+          "<Subject 3> hits the snare" in kept["detailed_description"], True)
+    check("but a subject nobody defined is still stripped", gone, ["<Subject 5>"])
+    bare = dict(band, detailed_description="[Shot 1] Subject 3 hits the snare.")
+    bound, _ = NP.bind_tags(bare, NP._allowed_tags(two))
+    check("a defined subject written without brackets is bracketed",
+          "<Subject 3> hits the snare" in bound["detailed_description"], True)
     check("autogrow sockets are read in slot order, not dict order",
           list(slots6[:3]), [("IMAGE", "hero.png"), "A", "B"])
     check("wired audio reaches its own slot", audios6[0], "TRACK")
@@ -678,5 +698,76 @@ check("the description gets its brackets",
       and "<Subject 2>" in _fixed["detailed_description"], True)
 check("and the metadata is unchanged",
       _fixed["subject_definitions"], _real["subject_definitions"])
+
+# --------------------------------------------------------------------------
+print("")
+print("the Segment Prompter plans the whole runtime")
+# Hardcore Metal_new, as it came back from the prompt creator: an 86-second
+# video, ten shots, the last at 00:27.000. The last shot was stretched to the
+# end of the video and planned as one 59-second segment.
+_times = ["", "00:03.000", "00:06.000", "00:09.000", "00:12.000", "00:15.000",
+          "00:17.600", "00:21.000", "00:24.000", "00:27.000"]
+_short = "detailed_description:" + chr(10) + chr(10).join(
+    "[Shot %d]%s the band plays, moment %d." % (
+        n + 1, (" At %s," % t) if t else " gritty handheld,", n + 1)
+    for n, t in enumerate(_times))
+
+_before, _, _ = splitter.split_treatment(_short, 86.0, 9.417, 2.0, 2)
+check("the old path really did plan one huge last segment",
+      round(max(s["target_duration"] for s in _before), 1), 59.0)
+
+_segs, _ctx, _warns = splitter.split_treatment(_short, 86.0, 8.0, 2.0, 2,
+                                               enforce_runtime=True)
+_lengths = [s["target_duration"] for s in _segs]
+check("no segment is longer than segment_seconds",
+      max(_lengths) <= 8.0 + 1e-6, True)
+check("the segments add up to total_seconds exactly",
+      round(sum(_lengths), 6), 86.0)
+check("they run end to end with no gap or overlap",
+      all(abs(a["source"]["end"] - b["source"]["start"]) < 1e-6
+          for a, b in zip(_segs, _segs[1:])), True)
+check("shots_per_segment still decides the grouping up to the treatment's end",
+      [s["source"]["shot_numbers"] for s in _segs
+       if not s["source"].get("continuation")],
+      [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])
+_cont = [s for s in _segs if s["source"].get("continuation")]
+check("the time the treatment never reached is filled, not stretched",
+      len(_cont), 7)
+check("each filler segment continues after the last real shot",
+      {s["source"]["continuation"]["after_shot"] for s in _cont}, {10})
+check("and the report says the treatment ended early, with its range",
+      any("THE TREATMENT ENDS EARLY" in w and "86.00s" in w for w in _warns),
+      True)
+
+# a single shot longer than a segment, in the middle
+_long = "detailed_description:" + chr(10) + chr(10).join([
+    "[Shot 1] gritty handheld, the intro.",
+    "[Shot 2] At 00:04.000, one long unbroken dolly across the stage.",
+    "[Shot 3] At 00:24.000, the drop.",
+    "[Shot 4] At 00:28.000, the crowd."])
+_segs2, _, _warns2 = splitter.split_treatment(_long, 32.0, 8.0, 2.0, 2,
+                                              enforce_runtime=True)
+_parts = [s for s in _segs2 if 2 in s["source"]["shot_numbers"]]
+check("a 20-second shot becomes segments that each fit",
+      all(s["target_duration"] <= 8.0 + 1e-6 for s in _parts)
+      and len(_parts) == 3, True)
+check("each carries which part of the shot it is",
+      [s["source"]["shots"][0].get("part") for s in _parts], [1, 2, 3])
+check("and the split is named in the report",
+      any("[Shot 2] runs 20.00s" in w for w in _warns2), True)
+check("still the whole runtime", round(sum(s["target_duration"] for s in _segs2), 6), 32.0)
+
+# a treatment that already covers the video is not touched
+_full = "detailed_description:" + chr(10) + chr(10).join(
+    "[Shot %d]%s moment." % (n + 1, (" At 00:%02d.000," % (n * 4)) if n else " gritty handheld,")
+    for n in range(8))
+_a, _, _ = splitter.split_treatment(_full, 32.0, 8.0, 2.0, 2)
+_b, _, _wb = splitter.split_treatment(_full, 32.0, 8.0, 2.0, 2, enforce_runtime=True)
+check("a treatment that fills the video plans exactly as before",
+      [(s["source"]["start"], s["source"]["end"]) for s in _b],
+      [(s["source"]["start"], s["source"]["end"]) for s in _a])
+check("and reports nothing about the runtime",
+      [w for w in _wb if "ENDS EARLY" in w or "runs" in w], [])
+
 print("\n%s" % ("FAILED: " + ", ".join(FAILED) if FAILED else "all checks passed"))
 sys.exit(1 if FAILED else 0)

@@ -158,6 +158,63 @@ try:
             ok("a failed encode raises", True)
         ok("and leaves no decoy clip in the vault", not os.path.exists(broken))
 
+    # ----------------------------------------------------------------------
+    print("\nstitching cannot drift out of sync")
+    # A real 86-second music video: fifteen cuts on musical lengths that fall
+    # between frames. Cut each clip on its own and every one keeps a partial
+    # frame, 27 ms at a time: the stitch came out at 2073 frames where the
+    # song is 2064, the audio a third of a second late by the end.
+    REAL = ([5.931] * 4 + [6.276, 5.586] + [5.931] * 6 + [7.028, 4.8, 3.0])
+    fps = 24.0
+    plan = media.frame_plan(REAL, fps)
+    check("the picture is exactly the song's length in frames",
+          sum(plan), int(round(sum(REAL) * fps)))
+    import math as _math
+    naive = sum(_math.floor(d * fps - 1e-9) + 1 for d in REAL)
+    ok("which is what cutting each clip on its own got wrong",
+       naive - sum(plan) == 9, "%d vs %d frames" % (naive, sum(plan)))
+    clock, placed, worst = 0.0, 0, 0.0
+    for d, n in zip(REAL, plan):
+        clock += d
+        placed += n
+        worst = max(worst, abs(placed / fps - clock))
+    ok("every cut lands within half a frame of where the plan put it",
+       worst <= 0.5 / fps + 1e-9, "%.1f ms" % (worst * 1000))
+    check("a clip shorter than its plan is never asked for frames it lacks",
+          media.frame_plan([1.0, 1.0], 24.0, [10, None]), [10, 38])
+
+    if have_ffmpeg:
+        # The same failure through real ffmpeg: six clips cut to 0.73 s, which
+        # is 17.52 frames. Cut one at a time they keep 18 each, 108 in all;
+        # the timeline holds 105.
+        parts = []
+        sr = 44100
+        for i in range(6):
+            wav = os.path.join(tmp, "p%d.wav" % i)
+            tone = (np.sin(np.arange(sr) * (0.02 + i * 0.01)) * 0.3).astype(np.float32)
+            media.save_wav({"waveform": np.stack([tone, tone])[None, ...],
+                            "sample_rate": sr}, wav)
+            clip = os.path.join(tmp, "p%d.mp4" % i)
+            frames = np.full((24, 64, 64, 3), (i + 1) / 7.0, dtype=np.float32)
+            media.encode_clip(frames, 24, clip, wav_path=wav)
+            parts.append({"path": clip, "duration": 0.73, "frames": 24,
+                          "has_audio": True})
+        joined = os.path.join(tmp, "joined.mp4")
+        media.concat_trimmed(parts, joined, 24, 64, 64, include_audio=True)
+        import subprocess as _sp
+        log = _sp.run([media.ffmpeg_bin(), "-i", joined, "-map", "0:v:0",
+                       "-c", "copy", "-f", "null", "-"],
+                      capture_output=True, text=True).stderr
+        got = int([l for l in log.splitlines()
+                   if "frame=" in l][-1].split("frame=")[1].split()[0])
+        check("six stitched clips hold the timeline's frame count, not 108",
+              got, int(round(6 * 0.73 * 24)))
+        back = media.load_audio_file(joined, sample_rate=48000)
+        audio_s = back["waveform"].shape[-1] / 48000.0
+        ok("and the sound is the same length as the picture",
+           abs(audio_s - got / 24.0) < 0.03,
+           "%.4fs of sound for %.4fs of picture" % (audio_s, got / 24.0))
+
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

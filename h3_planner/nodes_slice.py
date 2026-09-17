@@ -23,9 +23,10 @@ import json
 import re
 import time
 
-from . import ladder, splitter, store
+from . import ladder, splitter, store, vocals
 from .nodes_plan import CATEGORY, cited_tags, flatten_prompt
-from .nodes_prompt import (AUDIO_ROLES, SECTIONS, _allowed_tags, asset_names,
+from .nodes_prompt import (AUDIO_ROLES, SECTIONS, _allowed_tags, _vocal_summary,
+                           asset_names,
                            bind_tags,
                            canonical_subjects, enforce_audio_exact,
                            strip_asset_names, strip_unknown_tags)
@@ -269,6 +270,8 @@ class H3PlannerSegmentSlicer:
                             min_segment_seconds, prefix, audio_role,
                             carry_sections, sorted(names),
                             project["fps"], project["max_seconds"])
+        timeline_sections = context.get("vocal_timeline") or []
+        vocal_counts = {}
 
         rows, notes, written, skipped = [], [], 0, 0
         for seg in timeline["segments"]:
@@ -276,9 +279,13 @@ class H3PlannerSegmentSlicer:
                 rows.append("  %-8s locked, left alone" % seg["id"])
                 skipped += 1
                 continue
+            clip_vocals = vocals.for_segment(context, seg) if audio_tag else None
+            if clip_vocals:
+                vocal_counts[clip_vocals["state"]] = (
+                    vocal_counts.get(clip_vocals["state"], 0) + 1)
             prompt, stripped = self._build(
                 seg, context, prefix, canon, allowed, names, audio_tag,
-                audio_role, carry_sections)
+                audio_role, carry_sections, clip_vocals)
             seg["prompt"] = prompt
             seg["prompt_fingerprint"] = fingerprint
             seg["spec_hash"] = store.spec_hash(seg)
@@ -288,10 +295,11 @@ class H3PlannerSegmentSlicer:
                              % (seg["id"], ", ".join(stripped)))
             shots = (seg.get("source") or {}).get("shots") or []
             rows.append(
-                "  %-8s %6.3fs -> %6.3fs (%3d f)  %d shot(s)  %d words"
+                "  %-8s %6.3fs -> %6.3fs (%3d f)  %d shot(s)  %d words%s"
                 % (seg["id"], seg["target_duration"], seg["render_duration"],
                    seg["render_frames"], len(shots),
-                   len(flatten_prompt(prompt).split())))
+                   len(flatten_prompt(prompt).split()),
+                   "  [%s]" % vocals.describe(clip_vocals) if clip_vocals else ""))
 
         empty = [s["id"] for s in timeline["segments"]
                  if not str((s.get("prompt") or {}).get(
@@ -315,6 +323,8 @@ class H3PlannerSegmentSlicer:
             "style prefix  %s" % (prefix or "(none found — set an override)"),
             "audio         %s" % ("%s, %s" % (audio_tag, audio_role)
                                   if audio_tag else "(none connected)"),
+            "vocals        %s" % _vocal_summary(audio_tag, timeline_sections,
+                                                vocal_counts),
             "soundscape    %s"
             % ("overall_soundscape and non_diegetic_music are REPLACED in "
                "every segment, and the %s line in retention_analysis set to "
@@ -344,7 +354,7 @@ class H3PlannerSegmentSlicer:
     # -- building one segment --------------------------------------------
 
     def _build(self, seg, context, prefix, canon, allowed, names, audio_tag,
-               audio_role, carry_sections):
+               audio_role, carry_sections, clip_vocals=None):
         """Every section of one segment, assembled from the treatment."""
         render = seg.get("render_duration") or seg["target_duration"]
         shots = (seg.get("source") or {}).get("shots") or []
@@ -386,7 +396,8 @@ class H3PlannerSegmentSlicer:
             prompt, stripped = strip_unknown_tags(prompt, allowed)
         if audio_tag:
             prompt, _ = enforce_audio_exact(prompt, audio_tag, audio_role,
-                                            subject_tag="")
+                                            subject_tag="",
+                                            clip_vocals=clip_vocals)
 
         for key in SECTIONS:
             value = str(prompt.get(key) or "").strip()

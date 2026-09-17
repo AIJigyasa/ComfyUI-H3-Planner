@@ -203,13 +203,12 @@ try:
     # The Timeline node re-authors through a field whitelist, and dropped every
     # Story Planner field: the script and the scene grouping vanished the
     # moment the plan passed downstream.
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _src = io.open(os.path.join(root, "h3_planner", "nodes_plan.py"),
-                   encoding="utf-8").read()
-    _whitelist = _src.split("authored = {")[1].split("for seg in timeline")[0]
-    for _field in ("scene", "scene_name", "opens_from", "ends_with", "dialogue"):
+    from h3_planner import nodes_plan as _np
+    _whitelist = _np.H3PlannerTimeline.AUTHORED_FIELDS
+    for _field in ("scene", "scene_name", "opens_from", "ends_with", "dialogue",
+                   "speaker", "refine_note"):
         ok("the Timeline node carries %s downstream" % _field,
-           (chr(34) + _field + chr(34)) in _whitelist)
+           _field in _whitelist)
 
     print("")
     print("the airlock and the reference images")

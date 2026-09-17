@@ -9,6 +9,7 @@ function body, so this file calls every node's FUNCTION for real.
 """
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -20,6 +21,7 @@ WORK = tempfile.mkdtemp(prefix="h3planner_e2e_")
 os.environ["USERPROFILE"] = os.environ["HOME"] = WORK
 
 from h3_planner import engine, nodes_plan, nodes_prompt, nodes_run, store  # noqa: E402
+from h3_planner import vocals as vocals_mod  # noqa: E402
 
 try:
     from comfy_execution.graph import ExecutionBlocker
@@ -922,6 +924,607 @@ check("and nothing is reported when both speak",
       nodes_story.H3PlannerStoryPlanner._voices_used(
           [{"speaker": "<Subject 1>"}, {"speaker": "<Subject 2>"}],
           nodes_story.cast_voices(DUO)), [])
+
+
+# --------------------------------------------------------------------------
+print("")
+print("H3 Timeline - a refined prompt survives the planner re-running")
+import json
+# The user's exact loop: a planner wired into the Timeline, a segment
+# rendered, the card refined, the graph queued again. The planner handed back
+# its original prompt, the refine was overwritten, and the same shot rendered
+# again. Adversarial the way the real pipeline is: the planner also saves its
+# own prompts over the timeline on disk BEFORE the Timeline node runs.
+TL = nodes_plan.H3PlannerTimeline()
+kp = project("keep_edits")
+
+
+def planned(p2="[Shot 1] a wide of the cafe as she walks in."):
+    return {"name": kp["name"], "context": {},
+            "segments": [
+                {"id": "seg_01", "target_duration": 5.0,
+                 "prompt": "[Shot 1] he looks up from the table."},
+                {"id": "seg_02", "target_duration": 5.0, "prompt": p2}]}
+
+
+def queue(upstream, widget):
+    store.save(kp["timeline_path"], store.merge(
+        store.load(kp["timeline_path"]),
+        store.normalize_timeline(upstream, kp)))           # the planner's save
+    out = TL.build(kp, "inline", widget, "merge", True, timeline=upstream)
+    return out, out["ui"]["h3_timeline"][0]["authored"]
+
+
+first, widget = queue(planned(), "{}")
+doc = json.loads(widget)
+ok("the planner's delivery is recorded on each card",
+   all(s.get("planned_prompt_hash") for s in doc["segments"]))
+
+# seg_02 renders
+disk = store.load(kp["timeline_path"])
+s2 = store.find(disk, "seg_02")
+s2["clips"] = {"draft": {"file": "old.mp4", "pass": "draft", "take": 0}}
+s2["state"] = "draft"
+store.save(kp["timeline_path"], disk)
+
+# refine seg_02: what the route does on disk, and what the card does in the
+# widget
+REFINED = "[Shot 1] a LOW ANGLE of her walking away from camera."
+disk = store.load(kp["timeline_path"])
+s2 = store.find(disk, "seg_02")
+s2["prompt"] = REFINED
+s2["refine_note"] = "make it a low angle, she walks away"
+s2["spec_hash"] = store.spec_hash(s2)
+s2["clips"] = {}
+s2["state"] = store.PENDING
+store.save(kp["timeline_path"], disk)
+for s in doc["segments"]:
+    if s["id"] == "seg_02":
+        s["prompt"] = REFINED
+        s["refine_note"] = "make it a low angle, she walks away"
+widget = json.dumps(doc)
+
+second, widget = queue(planned(), widget)
+live = store.load(kp["timeline_path"])
+check("the refined prompt stays on the timeline",
+      store.find(live, "seg_02")["prompt"], REFINED)
+check("and in the card strip's JSON",
+      [s["prompt"] for s in json.loads(widget)["segments"]
+       if s["id"] == "seg_02"][0], REFINED)
+ok("the segment renders again rather than reusing the old clip",
+   store.find(live, "seg_02")["state"] == store.PENDING
+   and not store.find(live, "seg_02").get("clips"))
+ok("the report says the edit was kept",
+   "kept your edited prompt on seg_02" in second["result"][1],
+   second["result"][1][:160])
+check("an untouched segment still takes the planner's prompt",
+      store.find(live, "seg_01")["prompt"], "[Shot 1] he looks up from the table.")
+
+third, widget = queue(planned(), widget)
+check("it is still there on the queue after that",
+      store.find(store.load(kp["timeline_path"]), "seg_02")["prompt"], REFINED)
+
+# the planner genuinely re-writes seg_02: its new prompt wins, loudly
+NEW = "[Shot 1] a new plan: she sits down opposite him."
+fourth, widget = queue(planned(NEW), widget)
+back = store.find(store.load(kp["timeline_path"]), "seg_02")
+check("a real re-plan of that segment replaces the edit", back["prompt"], NEW)
+ok("and the report names the lost edit",
+   "REPLACED your edited prompt on seg_02" in fourth["result"][1])
+check("the stale refine note goes with it", back.get("refine_note"), "")
+
+# a hand edit on the card, no refine note, is kept the same way
+doc = json.loads(widget)
+for s in doc["segments"]:
+    if s["id"] == "seg_01":
+        s["prompt"] = "[Shot 1] HAND EDIT: he stands to greet her."
+fifth, widget = queue(planned(NEW), json.dumps(doc))
+check("a hand edit on the card is kept too",
+      store.find(store.load(kp["timeline_path"]), "seg_01")["prompt"],
+      "[Shot 1] HAND EDIT: he stands to greet her.")
+
+# a card from before the planned prompt was recorded
+old = {"name": kp["name"], "segments": [
+    {"id": "seg_01", "prompt": "[Shot 1] REFINED EARLIER.",
+     "refine_note": "earlier note"},
+    {"id": "seg_02", "prompt": "[Shot 1] stale copy, never refined."}]}
+sixth, _ = queue(planned(NEW), json.dumps(old))
+after = store.load(kp["timeline_path"])
+check("an older card that was refined keeps its refine",
+      store.find(after, "seg_01")["prompt"], "[Shot 1] REFINED EARLIER.")
+check("an older card that was never refined takes the planner's prompt",
+      store.find(after, "seg_02")["prompt"], NEW)
+
+# a card strip that belongs to another project leaks nothing across
+foreign = {"name": "some_other_project", "segments": [
+    {"id": "seg_02", "prompt": "[Shot 1] FROM ANOTHER PROJECT.",
+     "refine_note": "x"}]}
+seventh, _ = queue(planned(NEW), json.dumps(foreign))
+check("edits from another project's card strip are ignored",
+      store.find(store.load(kp["timeline_path"]), "seg_02")["prompt"], NEW)
+
+# --------------------------------------------------------------------------
+print("")
+print("H3 Segment Prompter - an idea is planned once, and every segment is complete")
+# The user's run: an 86-second music video from an idea alone, a stage picture
+# and a character sheet. Each segment was written blind and on its own: the
+# looks were invented, <Subject 1> was the singer in some segments and the
+# guitarist in others, only segment 1's definitions reached the rest, and six
+# summaries came out "N/A". The stub misbehaves the way that run did.
+IDEA = ("<Picture 1> is the main anchor image where the band is performing, "
+        "use <Picture 2> as character sheets of band characters. <Audio 1> is "
+        "the audio. first 28 seconds have only instrumental (no lip sync). "
+        "then the lyrics comes. the main lead singer is singing this and "
+        "others are playing their instruments. dont use <Picture 2> in the "
+        "video.")
+BAND = {
+    "members": [
+        {"tag": "<Picture 1>", "kind": "Picture", "slot": 1, "number": 1,
+         "key": "main_stage", "role": "composition", "note": "",
+         "file": "main_stage.png"},
+        {"tag": "<Picture 2>", "kind": "Picture", "slot": 2, "number": 2,
+         "key": "character sheet", "role": "character", "note": "",
+         "file": "sheet_0916.png"},
+        {"tag": "<Audio 1>", "kind": "Audio", "slot": 0, "number": 1,
+         "key": "wired_audio_1", "role": "audio", "note": "", "file": ""},
+    ],
+    "size": 2, "has_audio": True, "audio_tag": "<Audio 1>",
+    "counts": {"Subject": 0, "Picture": 2, "Video": 0, "Audio": 1},
+}
+PLAN_CAST = [
+    {"tag": "<Subject 1>", "who": "lead singer", "from": "<Picture 2>",
+     "looks": "long dark messy hair. A scar on the left cheek. Black jacket "
+              "with chains"},
+    {"tag": "Subject 2", "who": "guitarist", "from": "<Picture 2>",
+     "looks": "short dark hair, black sleeveless top, red guitar"},
+    {"tag": "<Subject 3>", "who": "drummer", "from": "<Picture 9>",
+     "looks": "shaved head, tattooed arms"},
+    {"tag": "<Subject 4>", "who": "bassist", "from": "<Picture 2>",
+     "looks": "long braids, leather vest"},
+]
+IP = {"plan_calls": [], "seg_calls": [], "plan_mode": "short_then_full",
+      "sections": [], "shots": 2}
+
+
+def plan_reply(count):
+    return {
+        "cast": PLAN_CAST,
+        "segments": [{"index": n + 1,
+                      "action": "PLANNED ACTION %d: the camera finds the band "
+                                "from a new angle." % (n + 1),
+                      "featured": ["<Subject %d>" % (n % 4 + 1), "<Subject 8>"],
+                      "vocals": "instrumental" if n < 3 else "sung"}
+                     for n in range(count)],
+        "performance": "sings",
+        "performer": "",                 # left empty, as qwen did
+        "vocal_sections": IP["sections"],
+    }
+
+
+def idea_generate(cfg, system, user, schema, required_keys=(), min_words=0,
+                  images=None):
+    if system == nodes_prompt.PLAN_SYSTEM:
+        IP["plan_calls"].append({"user": user, "images": list(images or []),
+                                 "max": cfg.max_output_tokens})
+        if IP["plan_mode"] == "raise":
+            raise RuntimeError("connection refused")
+        if IP["plan_mode"] == "short_then_full" and len(IP["plan_calls"]) == 1:
+            return plan_reply(7), "stub"            # 7 of the 11 asked for
+        return plan_reply(11), "stub"
+    IP["seg_calls"].append({"user": user, "images": list(images or []),
+                            "system": system,
+                            "keys": sorted((schema or {}).get("properties", {}))
+                            if isinstance(schema, dict) else []})
+    n = len(IP["seg_calls"])
+    if "LEFT summary" in user:                      # the section retry
+        return ({"summary": ""} if n % 2 else
+                {"summary": "[reference generation] The band plays on, "
+                            "call %d." % n}), "stub"
+    return {
+        # its own, different wording, and only for one subject
+        # ... citing the character sheet first, as the real model did
+        "subject_definitions": "<Subject 1> is a man with short hair and a "
+                               "leather jacket, from <Picture 2>.",
+        # the whole summary names subjects this segment does not define;
+        # every third call leaves it empty
+        "summary": "" if n % 3 == 0 else (
+            "%s The band <Subject 1>, <Subject 2>, <Subject 3> and "
+            "<Subject 4> perform, call %d."
+            % ("[video continuation]" if n % 4 == 1 else
+               "[reference generation]", n)),
+        "retention_analysis": "<Subject 1> (appears in [Shot 1], [Shot 7]): "
+                              "fully_preserved - identity.<Picture 2> ([Shot "
+                              "1] first frame): fully_preserved - composition "
+                              "anchor for the stage.",
+        "detailed_description": (
+            "[Shot 1] <Subject 3> hits the drums hard under a red light, "
+            "call %d. The scene opens on <Picture 2>, a wide of the main "
+            "stage. [Shot 2] At 00:03.000, <Subject 7> waves at the camera "
+            "while <Subject 2> plays a riff. <Subject 1> from <Picture 2> "
+            "raps into the mic, his mouth matching the words. <Subject 2> "
+            "(S2) turns and says, <d>'[lyrics]'</d>, head banging. <Subject 1> "
+            "(S1) roars <d>[English] Burn it all down</d>. <Subject 3> pounds "
+            "the kit, mouth matching the words as he sings. %s %s"
+            % (n, " ".join("[Shot %d] At 00:0%d.500, a cut to the crowd."
+                           % (k, k) for k in range(3, IP["shots"] + 1)),
+               " ".join("Beat %d.%d: the %s camera %s past %s." % (
+                n, k, ["handheld", "crane", "dolly", "static", "whip"][(n + k) % 5],
+                ["drifts", "pushes", "arcs", "tilts", "tracks"][(n * k) % 5],
+                ["the amps", "the kit", "the crowd", "the lights"][(n + 2 * k) % 4])
+                for k in range(14)))),
+        "overall_soundscape": "Crowd noise.",
+        "non_diegetic_music": "<Audio 1> drives it.",
+    }, "stub"
+
+
+engine.generate = idea_generate
+_real_image_b64 = engine.image_b64
+engine.image_b64 = lambda path: "IMG:" + os.path.basename(path)
+
+
+def idea_project(name):
+    return nodes_plan.H3PlannerProject().build(
+        name, 24.0, "16:9", "draft", 0.6, 1.2, 32, 12345, 17, 5, 5, "up",
+        10.0, 6.0, 10)[0]
+
+
+def run_idea(proj, reuse=False):
+    return nodes_prompt.H3PlannerSegmentPrompter().write(
+        proj, "", 86.0, 8.0, 2, "music video", "performed on camera",
+        "Ollama (Local)", "http://127.0.0.1:11434", "qwen3-vl:8b", 0.25,
+        reuse, 371069875, cast=BAND, idea=IDEA, max_output_tokens=3072)
+
+
+ip = idea_project("idea_plan")
+tl, rep = run_idea(ip)
+segs = tl["segments"]
+check("the 86-second idea is 11 segments", len(segs), 11)
+
+check("the plan is asked for twice when it comes back short",
+      len(IP["plan_calls"]), 2)
+ok("and the retry says why", "7 segment(s), 11 were asked for"
+   in IP["plan_calls"][1]["user"])
+check("the planner sees both pictures", IP["plan_calls"][0]["images"],
+      ["IMG:main_stage.png", "IMG:sheet_0916.png"])
+ok("so does every segment writer",
+   all(c["images"] == ["IMG:main_stage.png", "IMG:sheet_0916.png"]
+       for c in IP["seg_calls"]))
+ok("the plan gets room for its long reply",
+   IP["plan_calls"][0]["max"] >= 4096)
+ok("the planner is told each picture's job",
+   "<Picture 2> (character sheet) = IDENTITY reference"
+   in IP["plan_calls"][0]["user"])
+
+canon = tl["context"]["subject_definitions"]
+check("the plan's cast becomes the shared wording, one line per subject",
+      len(nodes_prompt.subject_lines(canon)), 4)
+ok("with the looks read from the picture, full stops and all",
+   "<Subject 1> is lead singer, from <Picture 2>: long dark messy hair; A scar"
+   " on the left cheek; Black jacket with chains." in canon, canon[:200])
+ok("a picture the cast does not have is not credited",
+   "<Picture 9>" not in canon and "<Subject 3> is drummer:" in canon)
+ok("and the report says so",
+   "<Subject 3> was said to come from <Picture 9>" in rep)
+ok("the plan is kept on the timeline for the next queue",
+   tl["context"]["plan"]["plan"]["beats"][10]["action"].startswith(
+       "PLANNED ACTION 11"))
+ok("a featured subject the plan never defined is dropped",
+   all(8 not in b["featured"] for b in tl["context"]["plan"]["plan"]["beats"]))
+ok("the backend is saved for refine at last", tl["context"].get("backend"))
+
+third = [c["user"] for c in IP["seg_calls"]
+         if "SEGMENT 3 OF 11" in c["user"]][0]
+ok("segment 3 is told where it sits in the track",
+   "15.64s to 23.45s of the whole 86.00s video" in third, third[:300])
+ok("and what the plan says happens in it",
+   "PLANNED ACTION 3:" in third and "PLANNED ACTION 2:" in third
+   and "PLANNED ACTION 4:" in third)
+ok("and who is on screen", "<Subject 3> (drummer)" in third)
+ok("and which verb the performer takes, and who that is",
+   "<Subject 1> (lead singer) sings" in third
+   and "Nobody else's mouth moves to the words" in third)
+ok("the singer is found from the cast when the plan leaves performer empty",
+   tl["context"]["plan"]["plan"]["performer"] == 1)
+ok("and the soundscape names the singer, not 'the subject on screen'",
+   all("performed on camera by <Subject 1>" in s["prompt"]["overall_soundscape"]
+       for s in segs if "performed on camera" in s["prompt"]["overall_soundscape"]))
+ok("a spoken line with no words in it is removed",
+   all("[lyrics]" not in json.dumps(s["prompt"]) for s in segs))
+ok("the guitarist it was given to does not keep a speaker id",
+   all("<Subject 2> (S2)" not in s["prompt"]["detailed_description"] for s in segs))
+ok("a real line is kept where the song is sung",
+   any("<d>[English] Burn it all down</d>" in s["prompt"]["detailed_description"]
+       for s in segs[4:]))
+ok("only the performer sings: the drummer's singing is taken away",
+   all("<Subject 3> pounds the kit." in s["prompt"]["detailed_description"]
+       for s in segs))
+ok("and the guitarist given an empty line keeps playing with his mouth shut",
+   all("<Subject 2> keeps playing, mouth closed." in s["prompt"]["detailed_description"]
+       for s in segs[4:]))
+check("a summary claims no keyframe task without a frame picture",
+      nodes_prompt.fix_summary_type("[keyframe completion] The band plays.",
+                                    BAND, "performed on camera"),
+      "[reference generation + audio reuse] The band plays.")
+ok("a summary never claims a video task with no video connected",
+   all("[video continuation]" not in s["prompt"]["summary"] for s in segs)
+   and all(s["prompt"]["summary"].startswith("[") for s in segs))
+ok("glued retention lines are separated",
+   all(".<" not in s["prompt"]["retention_analysis"] for s in segs))
+ok("and the cast numbers are fixed", "never swap them" in third)
+
+problems = []
+for s in segs:
+    p = s["prompt"]
+    defined = set(nodes_prompt.defining_lines(p["subject_definitions"]))
+    cited = nodes_prompt.cited_numbers(p, "Subject")
+    if cited - defined:
+        problems.append("%s cites %s undefined" % (s["id"], sorted(cited - defined)))
+    for n in cited:
+        line = nodes_prompt.defining_lines(canon).get(n)
+        if line and line not in p["subject_definitions"]:
+            problems.append("%s: <Subject %d> not in the shared wording" % (s["id"], n))
+    if "short hair and a leather jacket" in p["subject_definitions"]:
+        problems.append("%s kept its own invented looks" % s["id"])
+    for key in ("summary", "retention_analysis", "detailed_description"):
+        if p[key].strip() in ("", "N/A"):
+            problems.append("%s: %s is empty" % (s["id"], key))
+    for n in cited:
+        if "<Subject %d>" % n not in p["retention_analysis"]:
+            problems.append("%s: no retention for <Subject %d>" % (s["id"], n))
+    if "<Subject 7>" in json.dumps(p):
+        problems.append("%s: the undefined subject survived" % s["id"])
+ok("every segment defines every subject it cites, in the shared words, with "
+   "a summary and a retention line for each", not problems,
+   "; ".join(problems[:6]))
+ok("a sentence naming an undefined subject keeps its action",
+   all("someone waves at the camera" in s["prompt"]["detailed_description"]
+       for s in segs))
+ok("a retention line only claims shots the subject is really in",
+   all("<Subject 4>: fully_preserved" in s["prompt"]["retention_analysis"]
+       for s in segs if "<Subject 4>" in s["prompt"]["summary"]
+       and "<Subject 4>" not in s["prompt"]["detailed_description"]))
+ok("the whole-band summary survives",
+   any("<Subject 3> and <Subject 4> perform" in s["prompt"]["summary"]
+       for s in segs))
+ok("the undefined subject was asked about before being renamed",
+   any("CITED <Subject 7>, WHICH NOTHING DEFINES" in c["user"]
+       for c in IP["seg_calls"]))
+ok("an empty summary is asked for again",
+   any("LEFT summary EMPTY" in c["user"] for c in IP["seg_calls"]))
+ok("and written in code when the retry is empty too",
+   any(s["prompt"]["summary"].startswith(
+       "[reference generation + audio reuse] The target video shows this:")
+       for s in segs), [s["prompt"]["summary"][:60] for s in segs])
+ok("the report lists the repairs", "REPAIRED" in rep and "summary empty" in rep)
+ok("the report shows the plan and the pictures",
+   "plan          one plan for the whole video, made for this run: 11 of 11"
+   in rep and "shown to the model: <Picture 1>, <Picture 2>" in rep, rep[:600])
+
+# reuse_existing: nothing is asked again, nothing changes
+before = json.dumps([s["prompt"] for s in segs], sort_keys=True)
+store.save(ip["timeline_path"], tl)
+IP["plan_calls"], IP["seg_calls"] = [], []
+tl2, rep2 = run_idea(ip, reuse=True)
+check("with reuse_existing on, the plan is not asked for again",
+      len(IP["plan_calls"]), 0)
+check("and no segment is rewritten", len(IP["seg_calls"]), 0)
+check("so the prompts are exactly the same",
+      json.dumps([s["prompt"] for s in tl2["segments"]], sort_keys=True), before)
+ok("the report says the plan was reused", "reused from the saved timeline" in rep2)
+
+# a treatment is unaffected by all of this
+IP["plan_calls"], IP["seg_calls"] = [], []
+nodes_prompt.H3PlannerSegmentPrompter().write(
+    idea_project("idea_plan_treatment"), TREATMENT, 15.0, 10.0, 1, "auto",
+    "background only", "Ollama (Local)", "http://127.0.0.1:11434",
+    "qwen3-vl:8b", 0.25, False, 0, cast=CAST)
+check("a treatment makes no plan call", len(IP["plan_calls"]), 0)
+ok("and sends no pictures", all(not c["images"] for c in IP["seg_calls"]))
+
+# the plan call failing does not stop the node
+IP["plan_mode"] = "raise"
+IP["plan_calls"], IP["seg_calls"] = [], []
+tl3, rep3 = run_idea(idea_project("idea_plan_down"))
+ok("a failed plan still writes every segment",
+   all(s["prompt"] for s in tl3["segments"]))
+ok("and says loudly that it had no plan",
+   "plan          FAILED — the plan request failed: connection refused" in rep3)
+IP["plan_mode"] = "short_then_full"
+
+# --------------------------------------------------------------------------
+print("")
+print("H3 Segment Prompter - the idea's timing, shot count and picture jobs hold")
+# Same run. The idea said the first 28 seconds are instrumental, and three
+# clips inside them sang. It said the character sheet is not to be used in the
+# video, and seven clips opened on it. shots_per_segment was 2, and one clip
+# had 25 shots.
+first = segs[0]["prompt"]
+ok("a character sheet is never the opening frame",
+   all("opens on <Picture 2>" not in s["prompt"]["detailed_description"]
+       for s in segs))
+ok("the place it was used for becomes the stage picture",
+   "opens on <Picture 1>, a wide of the main stage"
+   in first["detailed_description"], first["detailed_description"][:300])
+ok("a subject named 'from' the sheet keeps only its tag",
+   all("from <Picture 2>" not in s["prompt"]["detailed_description"]
+       for s in segs))
+ok("the sheet is still credited where it belongs, in the definitions",
+   all("<Picture 2>" in s["prompt"]["subject_definitions"] for s in segs))
+ok("its retention line says identity only, never first frame",
+   all("<Picture 2>: reference - the appearance of the subjects taken from it "
+       "only" in s["prompt"]["retention_analysis"]
+       and "first frame" not in s["prompt"]["retention_analysis"]
+       for s in segs))
+ok("the stage picture is in every segment",
+   all("<Picture 1>" in s["prompt"]["detailed_description"] for s in segs))
+ok("and retained as the setting",
+   all("<Picture 1>" in s["prompt"]["retention_analysis"] for s in segs))
+
+
+def performed(body):
+    """The description minus the instrumental cue, which says nobody sings."""
+    return vocals_mod.ANY_CUE_RE.sub("", body)
+
+
+sung = [s for s in segs
+        if "sings into the mic" in s["prompt"]["detailed_description"]]
+ok("a metal singer sings: 'raps' is not left in",
+   all("raps" not in performed(s["prompt"]["detailed_description"])
+       for s in segs) and sung)
+ok("the picture jobs reach the writer",
+   all("PICTURE JOBS" in c["system"] for c in IP["seg_calls"]))
+
+check("shots_per_segment caps each clip at 2 shots",
+      [len(re.findall(r"\[Shot \d+\]", s["prompt"]["detailed_description"]))
+       for s in segs], [2] * 11)
+ok("and the writer is told so",
+   all("at most 2 shot(s)" in c["user"] for c in IP["seg_calls"]
+       if "SEGMENT" in c["user"] and "LEFT" not in c["user"]))
+ok("retention points at no shot the clip does not have",
+   all("[Shot 7]" not in s["prompt"]["retention_analysis"] for s in segs))
+check("a long budget is still bounded by the clip's length",
+      nodes_prompt.shot_budget(10, 7.818), 5)
+check("and never below one shot", nodes_prompt.shot_budget(0, 1.0), 1)
+
+# the model writes eight shots into a two-shot clip
+IP["shots"] = 8
+IP["plan_calls"], IP["seg_calls"] = [], []
+tl5, rep5 = run_idea(idea_project("idea_many_shots"))
+body5 = tl5["segments"][0]["prompt"]["detailed_description"]
+check("eight shots written, two kept",
+      len(re.findall(r"\[Shot \d+\]", body5)), 2)
+ok("the folded shots keep their action", body5.count("a cut to the crowd") == 6,
+   body5[:400])
+ok("and the report names it", "6 extra shot(s) folded into shot 2" in rep5)
+IP["shots"] = 2
+
+# the plan did not place the vocals itself: its per-segment states are used
+check("with no vocal times, the plan's segment states become the timeline",
+      tl["context"].get("vocal_timeline"),
+      [{"start": 0.0, "end": 23.454, "kind": "instrumental"},
+       {"start": 23.454, "end": 85.998, "kind": "vocals"}])
+
+# the plan places them: first 28 seconds instrumental, as the idea says
+IP["sections"] = [{"start": 0, "end": 28, "kind": "instrumental"}]
+IP["plan_calls"], IP["seg_calls"] = [], []
+tl6, rep6 = run_idea(idea_project("idea_vocals"))
+check("the idea's 28 instrumental seconds become the vocal timeline",
+      tl6["context"]["vocal_timeline"],
+      [{"start": 0.0, "end": 28.0, "kind": "instrumental"},
+       {"start": 28.0, "end": 85.998, "kind": "vocals"}])
+by_seg = {}
+for c in IP["seg_calls"]:
+    m = re.search(r"SEGMENT (\d+) OF 11", c["user"])
+    if m and "LEFT" not in c["user"]:
+        by_seg[int(m.group(1))] = c
+instrumental = nodes_prompt.INSTRUMENTAL_GUIDANCE.strip()
+check("clips 1-3 are written as instrumental, 4 on are not",
+      [instrumental in by_seg[n]["system"] for n in range(1, 12)],
+      [True, True, True] + [False] * 8)
+ok("clip 4 is told exactly where the singing starts inside it",
+   "sung only from 4.545s to 7.818s" in by_seg[4]["user"],
+   [l for l in by_seg[4]["user"].splitlines() if "sung" in l])
+ok("nobody sings in the instrumental clips",
+   all(not re.search(r"\b(sings|raps|singing|mouth matching)\b",
+                     performed(s["prompt"]["detailed_description"]))
+       for s in tl6["segments"][:3]))
+ok("the singer still sings once the vocals start",
+   all("sings into the mic" in s["prompt"]["detailed_description"]
+       for s in tl6["segments"][4:]))
+ok("the report shows the timeline and where it came from",
+   "vocals        from your idea (the idea's own times): 00:00.000-00:28.000 "
+   "instrumental, 00:28.000-01:25.998 vocals — 7 sung, 3 instrumental, "
+   "1 mixed clip(s)" in rep6, [l for l in rep6.splitlines() if "vocals" in l])
+
+# an idea that says nothing about the song gets no timeline, whatever the
+# model claims
+IDEA_SAVED = IDEA
+IDEA = "a gritty metal band on <Picture 1>, faces from <Picture 2>."
+IP["plan_calls"], IP["seg_calls"] = [], []
+tl7, rep7 = run_idea(idea_project("idea_no_timing"))
+check("no timing in the idea, no vocal timeline",
+      tl7["context"].get("vocal_timeline"), None)
+ok("so every clip follows audio_role, as before",
+   all(instrumental not in c["system"] for c in IP["seg_calls"]))
+IDEA = IDEA_SAVED
+IP["sections"] = []
+# --------------------------------------------------------------------------
+print("")
+print("H3 Segment Prompter - the picture and subject numbers reach H3 unchanged")
+# The prompt engine renumbers every tag by first appearance, and its dedupe
+# renumbers definitions from 1. subject_definitions named the character sheet,
+# <Picture 2>, first, so in every prompt the sheet became <Picture 1> and the
+# stage <Picture 2>: the text described the two wired images the wrong way
+# round. The stub below renumbers exactly as the real engine does.
+_LABEL = re.compile(r"<\s*(Subject|Picture|Video|Audio)\s*(\d+)\s*>")
+
+
+def renumbering_normalize(text, duration=0.0):
+    order = {}
+    for kind, n in _LABEL.findall(text):
+        seen = order.setdefault(kind, [])
+        if n not in seen:
+            seen.append(n)
+    return _LABEL.sub(lambda m: "<%s %d>" % (
+        m.group(1), order[m.group(1)].index(m.group(2)) + 1), text)
+
+
+def renumbering_dedupe(text):
+    parts = [p.strip() for p in re.split(r"(?=<Subject\s*\d+>\s*(?:=|is\s))", text)
+             if p.strip().startswith("<Subject")]
+    if not parts:
+        return text
+    return "\n".join("<Subject %d>%s" % (i + 1, re.sub(r"^<Subject\s*\d+>", "", p))
+                     for i, p in enumerate(parts))
+
+
+def renumbering_render(obj, duration=0.0):
+    obj = dict(obj)
+    obj["subject_definitions"] = renumbering_dedupe(
+        obj.get("subject_definitions") or "")
+    return renumbering_normalize("\n\n".join(
+        "%s:\n%s" % (k, obj.get(k) or "N/A") for k in nodes_prompt.SECTIONS))
+
+
+_saved = (engine.render_full_ref, engine.normalize_labels, engine.dedupe_subjects)
+engine.render_full_ref = renumbering_render
+engine.normalize_labels = renumbering_normalize
+engine.dedupe_subjects = renumbering_dedupe
+IP["plan_calls"], IP["seg_calls"] = [], []
+tl8, _ = run_idea(idea_project("idea_numbers"))
+engine.render_full_ref, engine.normalize_labels, engine.dedupe_subjects = _saved
+
+canon8 = nodes_prompt.defining_lines(tl8["context"]["subject_definitions"])
+wrong = []
+for s in tl8["segments"]:
+    p = s["prompt"]
+    if "Staged in the setting of <Picture 1>" not in p["detailed_description"] \
+            and "<Picture 1>" not in p["detailed_description"]:
+        wrong.append("%s lost the stage picture" % s["id"])
+    if "<Picture 2>, a wide" in p["detailed_description"]:
+        wrong.append("%s put the sheet back in the frame" % s["id"])
+    for n, line in nodes_prompt.defining_lines(p["subject_definitions"]).items():
+        if line != canon8.get(n):
+            wrong.append("%s: <Subject %d> is defined as %r" % (s["id"], n, line[:50]))
+ok("every prompt cites the stage as <Picture 1> and the sheet as <Picture 2>, "
+   "and every subject keeps its number", not wrong, "; ".join(wrong[:4]))
+
+seg_subset = {"subject_definitions": canon8[4] + "\n" + canon8[2],
+              "summary": "[reference generation] x",
+              "retention_analysis": "<Subject 2>: fully_preserved.",
+              "detailed_description": "[Shot 1] <Subject 2> and <Subject 4> play.",
+              "overall_soundscape": "x", "non_diegetic_music": "y"}
+engine.render_full_ref = renumbering_render
+engine.normalize_labels = renumbering_normalize
+kept = nodes_prompt.render_keeping_labels(seg_subset, 8.0)
+engine.render_full_ref, engine.normalize_labels, engine.dedupe_subjects = _saved
+check("a segment defining only subjects 4 and 2 still defines 4 and 2",
+      sorted(nodes_prompt.defining_lines(kept["subject_definitions"])), [2, 4])
+check("and its description still cites 2 and 4",
+      re.findall(r"<Subject \d>", kept["detailed_description"]),
+      ["<Subject 2>", "<Subject 4>"])
+
+engine.image_b64 = _real_image_b64
 
 engine.generate = fake_generate
 shutil.rmtree(WORK, ignore_errors=True)

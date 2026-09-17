@@ -7,7 +7,7 @@ set -e
 # and no Python test can see it.
 sh tests/check_js.sh
 
-for t in tests/test_core.py tests/test_prompt.py tests/test_end_to_end.py tests/test_io.py tests/test_story.py tests/test_slice.py tests/test_refine.py tests/test_beatmap.py; do
+for t in tests/test_core.py tests/test_prompt.py tests/test_end_to_end.py tests/test_io.py tests/test_story.py tests/test_slice.py tests/test_refine.py tests/test_beatmap.py tests/test_vocals.py tests/test_bridge.py; do
   printf '%-28s ' "$t"
   python "$t" > /dev/null && echo "pass"
 done

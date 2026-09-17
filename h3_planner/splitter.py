@@ -14,6 +14,8 @@ Pure functions, no ComfyUI imports.
 
 import re
 
+from . import vocals
+
 SECTION_KEYS = (
     "subject_definitions", "summary", "retention_analysis",
     "detailed_description", "overall_soundscape", "non_diegetic_music",
@@ -74,9 +76,25 @@ def parse_sections(prompt_text):
     return sections
 
 
+def _is_heading(text, match):
+    """A marker that starts a shot, as opposed to one that cites a shot.
+
+    "matching the framing of [Shot 1]" is a citation. Counting it as a shot
+    cut the treatment there and gave the real Shot 1's body to a clip of half
+    a second. A marker with a timestamp is always a heading, wherever it sits;
+    one without must start the text, a line or a sentence — the same rule the
+    prompt creator's timing pass uses.
+    """
+    if match.group(2) is not None:
+        return True
+    before = text[:match.start()].rstrip(" \t")
+    return not before or before[-1] in ".!?;:\n"
+
+
 def parse_shots(description, total_duration):
     """Return [{number, start, end, text}] from a description body."""
-    matches = list(SHOT_RE.finditer(description or ""))
+    text = description or ""
+    matches = [m for m in SHOT_RE.finditer(text) if _is_heading(text, m)]
     if not matches:
         return []
 
@@ -179,14 +197,128 @@ def group_shots(shots, max_seconds, min_seconds=2.0, max_shots=4,
     return groups, warnings
 
 
+def _read_vocal_timeline(context, total_duration, warnings):
+    """Lift the prompt creator's vocal timeline into the shared context.
+
+    A timeline that stops short of the video is reported rather than silently
+    treated as instrumental past its end, which would stop the singer in the
+    last segments with nothing said.
+    """
+    label, sections = vocals.parse(context.get("overall_soundscape", ""))
+    context["vocal_timeline"] = sections
+    context["vocal_label"] = label
+    if sections:
+        covered = sections[-1]["end"]
+        if covered + 0.5 < float(total_duration):
+            warnings.append(
+                "the vocal timeline covers %.1fs but the video is %.1fs; "
+                "segments past %.1fs are treated as instrumental. Re-run the "
+                "prompt creator with the full-length audio connected."
+                % (covered, float(total_duration), covered))
+
+
+def fit_runtime(shots, total_duration, max_seconds, min_seconds=2.0):
+    """Make a shot list fit the video's real length and segment length.
+
+    Two failures, one symptom: a single segment tens of seconds long at the end
+    of the timeline.
+
+    - A treatment that stops short. An 86-second music video came back from the
+      prompt creator with ten shots, the last at 00:27.000. The last shot has
+      no next timestamp, so it was stretched to the end of the video: 59
+      seconds of one shot, which no clip can render.
+    - A shot longer than a segment. "Never split a shot" is right for a shot H3
+      can render in one clip, and wrong for one it cannot.
+
+    The shot list's own pace decides where the treatment really ends: its last
+    shot is given the median length of the others. Whatever lies beyond that is
+    returned as continuation spans, each no longer than ``max_seconds``, for
+    the caller to fill. Any shot still longer than ``max_seconds`` is split into
+    equal parts that fit.
+
+    Returns ``(shots, continuation, notes)``.
+    """
+    import math
+
+    total = float(total_duration)
+    cap = float(max_seconds)
+    shots = [dict(s) for s in shots]
+    notes, continuation = [], []
+    if not shots or cap <= 0:
+        return shots, continuation, notes
+
+    last = shots[-1]
+    if len(shots) > 1:
+        lengths = sorted(s["end"] - s["start"] for s in shots[:-1])
+        natural = lengths[len(lengths) // 2]
+    else:
+        natural = cap
+    natural = min(cap, max(1.0, natural))
+    covered_to = round(min(total, last["start"] + natural), 3)
+    gap = total - covered_to
+    if gap > max(float(min_seconds), 0.5):
+        last["end"] = covered_to
+        count = max(1, int(math.ceil(gap / cap - 1e-9)))
+        step = gap / count
+        for k in range(count):
+            # Whole milliseconds, so the rounded segment lengths still add up
+            # to the video exactly rather than drifting a millisecond a cut.
+            start = round(covered_to + k * step, 3)
+            end = total if k == count - 1 else round(covered_to + (k + 1) * step, 3)
+            continuation.append({
+                "start": start, "end": end, "part": k + 1, "of": count,
+                "after_shot": last["number"],
+                "after_text": (last.get("text") or "")[:400],
+            })
+        notes.append(
+            "THE TREATMENT ENDS EARLY. Its shots cover 0.00s to %.2fs of a "
+            "%.2fs video; its last shot is [Shot %d] at %.2fs. The remaining "
+            "%.2fs is filled with %d segment(s) of up to %.2fs that continue "
+            "from it, rather than stretching that one shot to the end. Re-run "
+            "the prompt creator if you want those written from the treatment."
+            % (covered_to, total, last["number"], last["start"], gap, count,
+               cap))
+
+    fitted = []
+    for shot in shots:
+        length = shot["end"] - shot["start"]
+        if length <= cap + 1e-6:
+            fitted.append(shot)
+            continue
+        count = int(math.ceil(length / cap - 1e-9))
+        step = length / count
+        for k in range(count):
+            part = dict(shot)
+            part["start"] = round(shot["start"] + k * step, 3)
+            part["end"] = (shot["end"] if k == count - 1
+                           else round(shot["start"] + (k + 1) * step, 3))
+            part["part"], part["of"] = k + 1, count
+            fitted.append(part)
+        notes.append(
+            "[Shot %d] runs %.2fs, longer than the %.2fs segment length, so it "
+            "is split into %d segments of %.2fs that each cover part of it."
+            % (shot["number"], length, cap, count, step))
+    return fitted, continuation, notes
+
+
 def split_treatment(prompt_text, total_duration, max_seconds,
-                    min_seconds=2.0, max_shots=4):
-    """Full pass: text in, segment descriptors + shared context out."""
+                    min_seconds=2.0, max_shots=4, enforce_runtime=False):
+    """Full pass: text in, segment descriptors + shared context out.
+
+    ``enforce_runtime`` (the Segment Prompter) guarantees no segment is longer
+    than ``max_seconds`` and that the whole ``total_duration`` is planned, even
+    when the treatment stops short. Off, the behaviour is unchanged.
+    """
     sections = parse_sections(prompt_text)
     description = sections.get("detailed_description", "")
     shots = parse_shots(description, total_duration)
+    continuation, runtime_notes = [], []
+    if enforce_runtime:
+        shots, continuation, runtime_notes = fit_runtime(
+            shots, total_duration, max_seconds, min_seconds)
     groups, warnings = group_shots(shots, max_seconds, min_seconds, max_shots,
                                    total_duration)
+    warnings = runtime_notes + warnings
 
     # Timestamps that all read 0.000 are not a plan, they are a parse failure:
     # every segment collapses to the half-second fallback and the last shot
@@ -228,11 +360,37 @@ def split_treatment(prompt_text, total_duration, max_seconds,
                 "end": round(end, 3),
                 "shot_numbers": [s["number"] for s in group],
                 # timestamps rebased so the prompter never has to subtract
-                "shots": [{
+                "shots": [dict({
                     "number": s["number"],
                     "at": round(s["start"] - start, 3),
                     "text": s["text"],
-                } for s in group],
+                }, **({"part": s["part"], "of": s["of"]} if s.get("of") else {}))
+                    for s in group],
+            },
+        })
+
+    # Time the treatment never reached. Each span is its own segment, so the
+    # writer continues the piece instead of re-describing the last shot.
+    for piece in continuation:
+        index = len(segments)
+        segments.append({
+            "id": "seg_%02d" % (index + 1),
+            "beat": "continues after shot %d (%d/%d)"
+                    % (piece["after_shot"], piece["part"], piece["of"]),
+            "target_duration": round(piece["end"] - piece["start"], 3),
+            "link": "cut",
+            "prompt": "",
+            "audio_start": round(piece["start"], 3),
+            "source": {
+                "start": round(piece["start"], 3),
+                "end": round(piece["end"], 3),
+                "shot_numbers": [],
+                "shots": [],
+                "continuation": {
+                    "part": piece["part"], "of": piece["of"],
+                    "after_shot": piece["after_shot"],
+                    "after_text": piece["after_text"],
+                },
             },
         })
 
@@ -246,6 +404,7 @@ def split_treatment(prompt_text, total_duration, max_seconds,
         "overall_soundscape": sections.get("overall_soundscape", ""),
         "non_diegetic_music": sections.get("non_diegetic_music", ""),
     }
+    _read_vocal_timeline(context, total_duration, warnings)
     return segments, context, warnings
 
 
@@ -325,4 +484,5 @@ def split_on_cuts(prompt_text, cuts, total_duration):
         "overall_soundscape": sections.get("overall_soundscape", ""),
         "non_diegetic_music": sections.get("non_diegetic_music", ""),
     }
+    _read_vocal_timeline(context, total_duration, warnings)
     return segments, context, warnings

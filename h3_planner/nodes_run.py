@@ -625,6 +625,7 @@ class H3PlannerStitch:
             duration = min(duration, entry["duration"])
             clips.append({"path": vault.abs_path(name, entry),
                           "duration": duration,
+                          "frames": entry.get("frames"),
                           "width": entry.get("width", 0),
                           "height": entry.get("height", 0),
                           "has_audio": entry.get("has_audio", False)})
