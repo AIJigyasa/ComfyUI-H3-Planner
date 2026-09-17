@@ -285,6 +285,30 @@ Wire the Beat Map's `cuts` in and the boundaries come from the music instead:
 shots land in whichever cut their timestamp falls into, and any shot outside
 every cut is named in the report.
 
+### Sung and instrumental clips
+
+`performed on camera` describes the song, not every clip of it. When the
+treatment comes from the **H3 Full-Reference Video Prompt Creator** with the
+song connected, its `overall_soundscape` ends with a vocal timeline:
+
+```
+Vocal timeline of <Audio 1>: 00:00.000-00:25.300 instrumental; 00:25.300-00:27.100 vocals; ...
+```
+
+The Segment Slicer and Segment Prompter read it, and each clip takes its own
+state from its window in the song:
+
+- **instrumental** — every sentence showing someone sing, rap or lip-sync is
+  removed, the soundscape says the passage is instrumental, and the description
+  ends by saying nobody sings and every mouth stays closed. The Prompter also
+  gives that clip instrumental guidance instead of the performed-on-camera rules.
+- **sung** — handled exactly as before.
+- **mixed** — the clip is told when, on its own clock, the vocal runs.
+
+The report shows the state on each row. With no timeline in the treatment every
+clip follows `audio_role` alone, as before, and the report says what that risks.
+Refine keeps a clip's state when you revise it.
+
 ### H3 Beat Map
 For music videos. Finds the tempo, the bar lines and the biggest energy rises in
 a track, and lays out segments that start on a downbeat. Needs librosa; see
