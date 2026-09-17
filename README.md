@@ -15,7 +15,8 @@ Your checkpoint, LoRA, sigmas and latent upscaler stay exactly as they are.
   treatment into segments with no model at all; the **Beat Map** lays a music
   video's cuts on the actual bar lines of the track.
 - **Cast** it on the **Cast Board**, which uploads references into the node and
-  tags them `<Subject N>`, `<Picture N>`, `<Audio N>`, `<Video N>` for you.
+  tags them `<Picture N>`, `<Audio N>`, `<Video N>` for you; the people and
+  objects inside the pictures become `<Subject N>`.
 - **Render** one segment per queue run with the **Shot Dispatcher**, **Track
   Slice**, **Pass Gate** and **Vault Write**, with draft and upscaled final
   passes kept separately.
@@ -188,6 +189,19 @@ If a different VAE or LoRA changes the rule, `frame_modulus` / `frame_remainder`
 ---
 
 ## Nodes
+
+<p align="center">
+  <img src="docs/images/nodes-core.png" width="900"
+       alt="H3 Project, H3 Cast Board, H3 Timeline and H3 Shot Dispatcher">
+  <br><em>The core: Project, Cast Board, the Timeline card strip, and the Shot Dispatcher.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/nodes-planning-and-render.png" width="900"
+       alt="H3 Segment Prompter, Story Planner, Segment Slicer, Beat Map, Track Slice, Pass Gate, Vault Write and Stitch Timeline">
+  <br><em>Planning (Segment Prompter, Story Planner, Segment Slicer, Beat Map) and
+  rendering (Track Slice, Pass Gate, Vault Write, Stitch Timeline).</em>
+</p>
 
 ### H3 Project
 Everything global: fps, aspect, draft/final megapixels, alignment, base seed, the
